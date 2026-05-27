@@ -1,4 +1,12 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    // Cote navigateur : utiliser la meme IP que la page mais port 8000
+    return `http://${window.location.hostname}:8000/api`;
+  }
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+}
+
+const API = getApiBase();
 
 async function fetchAPI<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {

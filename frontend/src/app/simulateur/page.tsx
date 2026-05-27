@@ -50,26 +50,39 @@ export default function SimulateurPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Simulateur de prix</h1>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <h1 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">Simulateur de prix</h1>
+      <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6">
         {/* Formulaire */}
-        <div className="bg-white border rounded-lg p-5 space-y-4">
+        <div className="bg-white border rounded-lg p-4 sm:p-5 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1">Offre</label>
-            <select className="w-full border rounded px-3 py-2 text-sm"
+            <select className="w-full border rounded px-3 py-2.5 text-sm"
               value={selectedOffre?.id || ""}
               onChange={(e) => setSelectedOffre(offres.find((o) => o.id === Number(e.target.value)) || null)}>
               <option value="">Choisir une offre...</option>
               {offres.map((o) => (
-                <option key={o.id} value={o.id}>{o.nom} ({o.type_site}) - {eur(Number(o.tarif_vente_conseille))}</option>
+                <option key={o.id} value={o.id}>{o.nom} - {eur(Number(o.tarif_vente_conseille))}</option>
               ))}
             </select>
           </div>
 
+          {selectedOffre && (
+            <div className="bg-gray-50 rounded-lg p-3 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Type</span>
+                <span className="font-medium">{selectedOffre.type_site}</span>
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-gray-500">Prix catalogue</span>
+                <span className="font-medium">{eur(Number(selectedOffre.tarif_vente_conseille))}</span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Mode</label>
-              <select className="w-full border rounded px-3 py-2 text-sm" value={mode} onChange={(e) => setMode(e.target.value)}>
+              <select className="w-full border rounded px-3 py-2.5 text-sm" value={mode} onChange={(e) => setMode(e.target.value)}>
                 <option>Comptant</option>
                 <option>Leasing</option>
               </select>
@@ -77,43 +90,43 @@ export default function SimulateurPage() {
             {mode === "Comptant" && (
               <div>
                 <label className="block text-sm font-medium mb-1">Plan paiement</label>
-                <select className="w-full border rounded px-3 py-2 text-sm" value={plan} onChange={(e) => setPlan(e.target.value)}>
+                <select className="w-full border rounded px-3 py-2.5 text-sm" value={plan} onChange={(e) => setPlan(e.target.value)}>
                   {PLANS.map((p) => <option key={p}>{p}</option>)}
                 </select>
               </div>
             )}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-3 sm:gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">Remise setup %</label>
-              <input type="number" min={0} max={100} value={remiseSetup}
+              <input type="number" inputMode="decimal" min={0} max={100} value={remiseSetup}
                 onChange={(e) => setRemiseSetup(Number(e.target.value))}
-                className="w-full border rounded px-3 py-2 text-sm" />
+                className="w-full border rounded px-3 py-2.5 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Remise recurrent %</label>
-              <input type="number" min={0} max={100} value={remiseRecurrent}
+              <input type="number" inputMode="decimal" min={0} max={100} value={remiseRecurrent}
                 onChange={(e) => setRemiseRecurrent(Number(e.target.value))}
-                className="w-full border rounded px-3 py-2 text-sm" />
+                className="w-full border rounded px-3 py-2.5 text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Marge add.</label>
-              <input type="number" value={margeAdd}
+              <input type="number" inputMode="decimal" value={margeAdd}
                 onChange={(e) => setMargeAdd(Number(e.target.value))}
-                className="w-full border rounded px-3 py-2 text-sm" />
+                className="w-full border rounded px-3 py-2.5 text-sm" />
             </div>
           </div>
 
           <button onClick={simuler} disabled={!selectedOffre || loading}
-            className="w-full py-2.5 bg-[#1A355E] text-white rounded font-medium text-sm hover:bg-[#15294a] disabled:opacity-50">
+            className="w-full py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm hover:bg-[#15294a] disabled:opacity-50 active:scale-[0.98] transition-transform">
             {loading ? "Calcul..." : "Simuler"}
           </button>
           {error && <p className="text-red-600 text-sm">{error}</p>}
         </div>
 
         {/* Resultats */}
-        <div className="bg-white border rounded-lg p-5">
+        <div className="bg-white border rounded-lg p-4 sm:p-5">
           <h2 className="text-lg font-semibold mb-4">Resultats</h2>
           {!result ? (
             <p className="text-gray-400 text-sm">Selectionnez une offre et lancez la simulation.</p>
@@ -163,16 +176,16 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="border-t pt-3">
       <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">{title}</h3>
-      <div className="space-y-1">{children}</div>
+      <div className="space-y-1.5">{children}</div>
     </div>
   );
 }
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex justify-between">
+    <div className="flex justify-between gap-2">
       <span className="text-gray-600">{label}</span>
-      <span className={bold ? "font-semibold" : ""}>{value}</span>
+      <span className={`text-right shrink-0 ${bold ? "font-semibold" : ""}`}>{value}</span>
     </div>
   );
 }

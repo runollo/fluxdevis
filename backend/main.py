@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.api.routes import offres, options, clients, devis, factures
+from app.api.routes import offres, options, clients, devis, factures, simulation, generation
 
 settings = get_settings()
 
@@ -29,6 +29,8 @@ app.include_router(options.router, prefix="/api/options", tags=["Options"])
 app.include_router(clients.router, prefix="/api/clients", tags=["Clients"])
 app.include_router(devis.router, prefix="/api/devis", tags=["Devis"])
 app.include_router(factures.router, prefix="/api/factures", tags=["Factures"])
+app.include_router(simulation.router, prefix="/api/simulation", tags=["Simulation"])
+app.include_router(generation.router, prefix="/api/generation", tags=["Generation"])
 
 
 @app.get("/api/health")

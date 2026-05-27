@@ -1,0 +1,20 @@
+# Backend FluxDevis
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Base de donnees
+sqlalchemy>=2.0
+asyncpg>=0.30
+psycopg2-binary>=2.9
+alembic>=1.14
+
+# Generation de documents
+python-docx>=1.1
+openpyxl>=3.1
+
+# Utilitaires
+python-multipart>=0.0.9
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7

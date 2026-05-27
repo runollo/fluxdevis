@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Environnement
+.env
+*.env
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Fichiers generes
+generated/
+*.docx
+*.xlsx
+*.xlsm
+!backend/app/templates/**
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (frontend)
+node_modules/
+.next/
+out/

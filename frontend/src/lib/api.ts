@@ -1,13 +1,8 @@
-function apiBase(): string {
-  if (typeof window !== "undefined") {
-    return `http://${window.location.hostname}:8000/api`;
-  }
-  return "http://localhost:8000/api";
-}
+// Appels en relatif — Next.js proxifie /api/* vers le backend (port 8000)
+const API = "/api";
 
 async function fetchAPI<T>(path: string, opts?: RequestInit): Promise<T> {
-  const url = `${apiBase()}${path}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${API}${path}`, {
     headers: { "Content-Type": "application/json", ...opts?.headers },
     ...opts,
   });
@@ -41,7 +36,7 @@ export const api = {
     list: () => fetchAPI<Offre[]>("/offres/"),
     create: (d: Partial<Offre>) => fetchAPI<Offre>("/offres/", { method: "POST", body: JSON.stringify(d) }),
     update: (id: number, d: Partial<Offre>) => fetchAPI<Offre>(`/offres/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
-    delete: (id: number) => fetch(`${apiBase()}/offres/${id}`, { method: "DELETE" }),
+    delete: (id: number) => fetch(`${API}/offres/${id}`, { method: "DELETE" }),
   },
   options: {
     list: (cat?: string) => fetchAPI<Option[]>(`/options/${cat ? "?categorie=" + cat : ""}`),
@@ -58,7 +53,7 @@ export const api = {
   },
   generation: {
     facture: async (d: Record<string, unknown>): Promise<Blob> => {
-      const res = await fetch(`${apiBase()}/generation/facture`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
+      const res = await fetch(`${API}/generation/facture`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
       if (!res.ok) throw new Error(`Generation ${res.status}`);
       return res.blob();
     },

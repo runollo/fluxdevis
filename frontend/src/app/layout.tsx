@@ -15,8 +15,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="fr" className={`${geist.variable} h-full`} style={{ colorScheme: "light" }}>
       <body className="h-full bg-gray-50 text-gray-900 antialiased">
         <Sidebar />
-        {/* pt-14 sur mobile pour compenser le header fixe, lg:pl-56 pour la sidebar desktop */}
-        <main className="min-h-full pt-14 lg:pt-0 lg:pl-56">
+        {/* pt-12=header 48px, pb-16=bottom nav 64px sur mobile; lg:pl-56=sidebar desktop */}
+        <main className="min-h-full pt-12 pb-16 lg:pt-0 lg:pb-0 lg:pl-56">
           <div className="p-4 sm:p-6">{children}</div>
         </main>
       </body>

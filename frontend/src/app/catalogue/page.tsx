@@ -27,7 +27,13 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
 
   return (
     <div>
-      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">Catalogue</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Catalogue</h1>
+        <Link href={tab === "offres" ? "/catalogue/offre" : "/catalogue/option"}
+          className="px-4 py-2.5 bg-[#1A355E] text-white rounded text-sm font-medium text-center">
+          + {tab === "offres" ? "Nouvelle offre" : "Nouvelle option"}
+        </Link>
+      </div>
       <div className="flex gap-2 mb-4">
         <Link href="/catalogue"
           className={`flex-1 sm:flex-none px-4 py-2.5 rounded text-sm font-medium text-center transition-colors ${tab === "offres" ? "bg-[#1A355E] text-white" : "bg-white border text-gray-700"}`}>
@@ -44,7 +50,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
           {/* Mobile */}
           <div className="sm:hidden space-y-3">
             {offres.map((o) => (
-              <div key={o.id} className="bg-white border rounded-lg p-4">
+              <Link key={o.id} href={`/catalogue/offre?id=${o.id}`} className="block bg-white border rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <h3 className="font-medium text-sm leading-tight">{o.nom}</h3>
                   <span className="text-xs bg-gray-100 px-2 py-0.5 rounded ml-2 shrink-0">{o.type_site}</span>
@@ -55,7 +61,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                   <div className="text-gray-500">Marge</div><div className="text-right">{(Number(o.taux_marge) * 100).toFixed(0)} %</div>
                   <div className="text-gray-500">Pages</div><div className="text-right">{o.pages}</div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
           {/* Desktop */}
@@ -70,6 +76,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                   <th className="px-4 py-3 font-medium text-right">Marge</th>
                   <th className="px-4 py-3 font-medium text-right">Pages</th>
                   <th className="px-4 py-3 font-medium text-right">Heures</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -82,6 +89,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                     <td className="px-4 py-3 text-right">{(Number(o.taux_marge) * 100).toFixed(0)} %</td>
                     <td className="px-4 py-3 text-right">{o.pages}</td>
                     <td className="px-4 py-3 text-right">{o.heures} h</td>
+                    <td className="px-4 py-3 text-right"><Link href={`/catalogue/offre?id=${o.id}`} className="text-blue-600 hover:underline text-xs">Modifier</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -93,7 +101,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
           {/* Mobile */}
           <div className="sm:hidden space-y-3">
             {options.map((o) => (
-              <div key={o.id} className="bg-white border rounded-lg p-4">
+              <Link key={o.id} href={`/catalogue/option?id=${o.id}`} className="block bg-white border rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
                     <h3 className="font-medium text-sm">{o.nom}</h3>
@@ -111,7 +119,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                     {Number(o.vente_setup) === 0 && Number(o.vente_mensuel) === 0 && <span className="text-gray-400">-</span>}
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
           {/* Desktop */}
@@ -125,6 +133,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                   <th className="px-4 py-3 font-medium">Type</th>
                   <th className="px-4 py-3 font-medium text-right">Setup</th>
                   <th className="px-4 py-3 font-medium text-right">Mensuel</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -140,6 +149,7 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
                     </td>
                     <td className="px-4 py-3 text-right">{Number(o.vente_setup) > 0 ? `${Number(o.vente_setup).toFixed(2)} \u20ac` : "-"}</td>
                     <td className="px-4 py-3 text-right">{Number(o.vente_mensuel) > 0 ? `${Number(o.vente_mensuel).toFixed(2)} \u20ac/m` : "-"}</td>
+                    <td className="px-4 py-3 text-right"><Link href={`/catalogue/option?id=${o.id}`} className="text-blue-600 hover:underline text-xs">Modifier</Link></td>
                   </tr>
                 ))}
               </tbody>

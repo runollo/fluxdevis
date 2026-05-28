@@ -1,4 +1,4 @@
-// URL absolue vers le backend — utilisee cote serveur (Server Components)
+// URL absolue vers le backend — utilisee cote serveur (Server Components + Server Actions)
 const BACKEND = "http://127.0.0.1:8000/api";
 
 // URL relative — utilisee cote client (navigateur) via le proxy Next.js
@@ -10,6 +10,26 @@ export async function serverFetch<T>(path: string): Promise<T> {
     cache: "no-store",
   });
   if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
+}
+
+export async function serverPost<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+export async function serverPatch<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
   return res.json();
 }
 
@@ -33,7 +53,8 @@ export interface Option {
   id: number; code: string; nom: string; categorie: string; type_ligne: string;
   vente_setup: number; vente_mensuel: number; setup_achat: number; mensuel_achat: number;
   taux_marge: number; prix_heure: number; heures_setup: number; heures_mensuel: number;
-  commentaire: string | null; selection_regle: string; actif: boolean; ordre: number;
+  prix_hebergement: number; commentaire: string | null; selection_regle: string;
+  quantite_defaut: number; unite: string; actif: boolean; ordre: number;
 }
 
 export interface Client {

@@ -53,16 +53,19 @@ export async function saveOption(formData: FormData) {
 
 export async function saveClient(formData: FormData) {
   const id = formData.get("id") as string;
-  const data: Record<string, unknown> = {
-    raison_sociale: formData.get("raison_sociale"),
-    adresse: formData.get("adresse") || null,
-    code_postal: formData.get("code_postal") || null,
-    ville: formData.get("ville") || null,
-    interlocuteur: formData.get("interlocuteur") || null,
-    telephone: formData.get("telephone") || null,
-    email: formData.get("email") || null,
-    siret: formData.get("siret") || null,
-  };
+  const fields = [
+    "raison_sociale", "forme_juridique", "siret", "code_ape", "rcs", "tva_intracom",
+    "adresse", "complement_adresse", "code_postal", "ville", "pays",
+    "civilite", "interlocuteur", "fonction", "telephone", "mobile", "email",
+    "notes",
+  ];
+  const data: Record<string, unknown> = {};
+  for (const f of fields) {
+    const val = formData.get(f);
+    data[f] = val ? String(val) : null;
+  }
+  // raison_sociale ne doit jamais etre null
+  data.raison_sociale = formData.get("raison_sociale");
 
   if (id) {
     await serverPatch(`/clients/${id}`, data);

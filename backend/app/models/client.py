@@ -15,14 +15,31 @@ class Client(Base, TimestampMixin):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+
+    # Identification societe
     raison_sociale: Mapped[str] = mapped_column(String(200), index=True)
+    forme_juridique: Mapped[str | None] = mapped_column(String(50))
+    siret: Mapped[str | None] = mapped_column(String(20))
+    code_ape: Mapped[str | None] = mapped_column(String(10))
+    rcs: Mapped[str | None] = mapped_column(String(100))
+    tva_intracom: Mapped[str | None] = mapped_column(String(20))
+
+    # Adresse
     adresse: Mapped[str | None] = mapped_column(String(300))
+    complement_adresse: Mapped[str | None] = mapped_column(String(300))
     code_postal: Mapped[str | None] = mapped_column(String(10))
     ville: Mapped[str | None] = mapped_column(String(100))
+    pays: Mapped[str | None] = mapped_column(String(50), default="France")
+
+    # Contact principal
+    civilite: Mapped[str | None] = mapped_column(String(10))
     interlocuteur: Mapped[str | None] = mapped_column(String(200))
+    fonction: Mapped[str | None] = mapped_column(String(100))
     telephone: Mapped[str | None] = mapped_column(String(30))
+    mobile: Mapped[str | None] = mapped_column(String(30))
     email: Mapped[str | None] = mapped_column(String(200))
-    siret: Mapped[str | None] = mapped_column(String(20))
+
+    # Notes
     notes: Mapped[str | None] = mapped_column(Text)
     actif: Mapped[bool] = mapped_column(default=True)
 

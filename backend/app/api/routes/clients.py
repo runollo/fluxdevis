@@ -10,17 +10,34 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
+_FIELDS = [
+    "raison_sociale", "forme_juridique", "siret", "code_ape", "rcs", "tva_intracom",
+    "adresse", "complement_adresse", "code_postal", "ville", "pays",
+    "civilite", "interlocuteur", "fonction", "telephone", "mobile", "email",
+    "notes",
+]
+
 
 class ClientRead(BaseModel):
     id: int
     raison_sociale: str
-    adresse: str | None
-    code_postal: str | None
-    ville: str | None
-    interlocuteur: str | None
-    telephone: str | None
-    email: str | None
-    siret: str | None
+    forme_juridique: str | None = None
+    siret: str | None = None
+    code_ape: str | None = None
+    rcs: str | None = None
+    tva_intracom: str | None = None
+    adresse: str | None = None
+    complement_adresse: str | None = None
+    code_postal: str | None = None
+    ville: str | None = None
+    pays: str | None = None
+    civilite: str | None = None
+    interlocuteur: str | None = None
+    fonction: str | None = None
+    telephone: str | None = None
+    mobile: str | None = None
+    email: str | None = None
+    notes: str | None = None
     actif: bool
 
     model_config = {"from_attributes": True}
@@ -28,24 +45,44 @@ class ClientRead(BaseModel):
 
 class ClientCreate(BaseModel):
     raison_sociale: str
+    forme_juridique: str | None = None
+    siret: str | None = None
+    code_ape: str | None = None
+    rcs: str | None = None
+    tva_intracom: str | None = None
     adresse: str | None = None
+    complement_adresse: str | None = None
     code_postal: str | None = None
     ville: str | None = None
+    pays: str | None = "France"
+    civilite: str | None = None
     interlocuteur: str | None = None
+    fonction: str | None = None
     telephone: str | None = None
+    mobile: str | None = None
     email: str | None = None
-    siret: str | None = None
+    notes: str | None = None
 
 
 class ClientUpdate(BaseModel):
     raison_sociale: str | None = None
+    forme_juridique: str | None = None
+    siret: str | None = None
+    code_ape: str | None = None
+    rcs: str | None = None
+    tva_intracom: str | None = None
     adresse: str | None = None
+    complement_adresse: str | None = None
     code_postal: str | None = None
     ville: str | None = None
+    pays: str | None = None
+    civilite: str | None = None
     interlocuteur: str | None = None
+    fonction: str | None = None
     telephone: str | None = None
+    mobile: str | None = None
     email: str | None = None
-    siret: str | None = None
+    notes: str | None = None
     actif: bool | None = None
 
 

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { serverPost, serverPatch } from "./api";
+import { serverPost, serverPatch, serverFetch } from "./api";
 
 export async function saveOffre(formData: FormData) {
   const id = formData.get("id") as string;
@@ -73,4 +73,107 @@ export async function saveClient(formData: FormData) {
     await serverPost("/clients/", data);
   }
   redirect("/clients");
+}
+
+
+export async function runSimulation(formData: FormData) {
+  const offre_id = formData.get("offre_id") as string;
+  if (!offre_id) redirect("/simulateur");
+
+  // Charger l'offre
+  const offres = await serverFetch<Array<{
+    id: number; nom: string; type_site: string;
+    tarif_achat: string; tarif_vente_conseille: string;
+  }>>("/offres/");
+  const offre = offres.find(o => o.id === Number(offre_id));
+  if (!offre) redirect("/simulateur");
+
+  const mode = (formData.get("mode") as string) || "Comptant";
+  const plan = (formData.get("plan") as string) || "100%";
+
+  // Options selectionnees
+  const selections: Array<Record<string, unknown>> = [];
+  const optionsData = await serverFetch<Array<{
+    id: number; code: string; nom: string; type_ligne: string; statut: string;
+    setup_achat: string; vente_setup: string; mensuel_achat: string; vente_mensuel: string;
+  }>>(`/offres/${offre_id}/options`);
+
+  const packId = Number(formData.get("pack_id") || "0");
+
+  for (const opt of optionsData) {
+    let qty = Number(formData.get(`opt_${opt.id}`) || "0");
+
+    // Pack maintenance : selectionne via radio button
+    if (opt.type_ligne === "PACK") {
+      qty = opt.id === packId ? 1 : 0;
+    }
+
+    if (qty > 0 || opt.statut === "Inclus") {
+      selections.push({
+        option_id: opt.id,
+        code: opt.code,
+        nom: opt.nom,
+        type_ligne: opt.type_ligne,
+        quantite: opt.statut === "Inclus" ? 1 : qty,
+        statut: opt.statut,
+        prix_achat_setup: opt.setup_achat,
+        prix_vente_setup: opt.vente_setup,
+        prix_achat_mensuel: opt.mensuel_achat,
+        prix_vente_mensuel: opt.vente_mensuel,
+      });
+    }
+  }
+
+  // Prestations sur mesure
+  const prestations: Array<Record<string, unknown>> = [];
+  for (let i = 1; i <= 3; i++) {
+    const designation = formData.get(`presta_${i}_nom`) as string;
+    const qty = Number(formData.get(`presta_${i}_qty`) || "0");
+    const pu_achat = Number(formData.get(`presta_${i}_achat`) || "0");
+    const pu_vente = Number(formData.get(`presta_${i}_vente`) || "0");
+    if (designation && qty > 0 && pu_vente > 0) {
+      prestations.push({
+        designation, quantite: qty,
+        prix_unitaire_achat: String(pu_achat),
+        prix_unitaire_vente: String(pu_vente),
+      });
+    }
+  }
+
+  const body: Record<string, unknown> = {
+    offre_nom: offre!.nom,
+    offre_type_site: offre!.type_site,
+    prix_achat: offre!.tarif_achat,
+    prix_vente_conseille: offre!.tarif_vente_conseille,
+    mode_reglement: mode,
+    plan_paiement: plan,
+    remise_pct_setup: String(Number(formData.get("remise_setup") || "0") / 100),
+    remise_pct_recurrent: String(Number(formData.get("remise_recurrent") || "0") / 100),
+    marge_additionnelle: formData.get("marge_add") || "0",
+    selections,
+    prestations,
+  };
+
+  // Leasing
+  if (mode === "Leasing") {
+    body.duree_financement = formData.get("duree_financement") || "";
+    body.coefficient_locam = formData.get("coefficient_locam") || "0";
+    body.pct_maintenance_locam = String(Number(formData.get("pct_maintenance") || "0") / 100);
+    body.garantie_web = formData.get("garantie_web") || "10";
+  }
+
+  const result = await serverPost<Record<string, string>>("/simulation/", body);
+
+  // Encoder le resultat dans l'URL pour l'afficher
+  const resultParam = encodeURIComponent(JSON.stringify(result));
+  const params = new URLSearchParams({
+    offre_id,
+    mode,
+    plan,
+    remise_setup: formData.get("remise_setup") as string || "0",
+    remise_recurrent: formData.get("remise_recurrent") as string || "0",
+    marge_add: formData.get("marge_add") as string || "0",
+    result: resultParam,
+  });
+  redirect(`/simulateur?${params.toString()}`);
 }

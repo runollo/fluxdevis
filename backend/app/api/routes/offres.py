@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.offre import Offre
+from app.models.option import Option, OptionInclusion
 from pydantic import BaseModel
 from decimal import Decimal
 
@@ -98,3 +99,80 @@ async def delete_offre(offre_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Offre non trouvee")
     offre.actif = False
     await db.commit()
+
+
+class OptionWithStatut(BaseModel):
+    id: int
+    code: str
+    nom: str
+    categorie: str
+    type_ligne: str
+    vente_setup: Decimal
+    vente_mensuel: Decimal
+    setup_achat: Decimal
+    mensuel_achat: Decimal
+    commentaire: str | None
+    statut: str  # Inclus, Option payante, Non disponible
+    ordre: int
+
+    model_config = {"from_attributes": True}
+
+
+# Noms des 4 packs maintenance
+_PACK_CODES = {"WF_MAINT_ESS", "WF_MAINT_STD", "WF_MAINT_PRO", "WF_MAINT_PREM",
+               "SHOPIFY_MAINT_ESS", "SHOPIFY_MAINT_STD", "SHOPIFY_MAINT_PRO", "SHOPIFY_MAINT_PREM"}
+
+
+@router.get("/{offre_id}/options", response_model=list[OptionWithStatut])
+async def get_offre_options(offre_id: int, db: AsyncSession = Depends(get_db)):
+    """Retourne toutes les options avec leur statut pour une offre donnee."""
+    offre = await db.get(Offre, offre_id)
+    if not offre:
+        raise HTTPException(404, "Offre non trouvee")
+
+    # Charger les inclusions pour cette offre
+    incl_result = await db.execute(
+        select(OptionInclusion.option_id).where(OptionInclusion.offre_id == offre_id)
+    )
+    included_ids = set(incl_result.scalars().all())
+
+    # Charger toutes les options actives
+    opts_result = await db.execute(
+        select(Option).where(Option.actif).order_by(Option.ordre)
+    )
+    options = opts_result.scalars().all()
+
+    # Determiner le type de site pour filtrer les packs maintenance
+    is_shopify = "shopify" in offre.type_site.lower()
+
+    result = []
+    for opt in options:
+        # Filtrer les packs maintenance par plateforme
+        if opt.code.startswith("WF_MAINT_") and is_shopify:
+            continue
+        if opt.code.startswith("SHOPIFY_MAINT_") and not is_shopify:
+            continue
+
+        # Determiner le statut
+        if opt.id in included_ids:
+            statut = "Inclus"
+        elif opt.type_ligne == "PACK":
+            statut = "Disponible"
+        else:
+            statut = "Option payante"
+
+        result.append(OptionWithStatut(
+            id=opt.id,
+            code=opt.code,
+            nom=opt.nom,
+            categorie=opt.categorie,
+            type_ligne=opt.type_ligne,
+            vente_setup=opt.vente_setup,
+            vente_mensuel=opt.vente_mensuel,
+            setup_achat=opt.setup_achat,
+            mensuel_achat=opt.mensuel_achat,
+            commentaire=opt.commentaire,
+            statut=statut,
+            ordre=opt.ordre,
+        ))
+    return result

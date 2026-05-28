@@ -1,8 +1,20 @@
-// Appels en relatif — Next.js proxifie /api/* vers le backend (port 8000)
-const API = "/api";
+// URL absolue vers le backend — utilisee cote serveur (Server Components)
+const BACKEND = "http://127.0.0.1:8000/api";
 
-async function fetchAPI<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
+// URL relative — utilisee cote client (navigateur) via le proxy Next.js
+const CLIENT_API = "/api";
+
+export async function serverFetch<T>(path: string): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.json();
+}
+
+export async function clientFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+  const res = await fetch(`${CLIENT_API}${path}`, {
     headers: { "Content-Type": "application/json", ...opts?.headers },
     ...opts,
   });
@@ -30,32 +42,3 @@ export interface Client {
   interlocuteur: string | null; telephone: string | null;
   email: string | null; siret: string | null; actif: boolean;
 }
-
-export const api = {
-  offres: {
-    list: () => fetchAPI<Offre[]>("/offres/"),
-    create: (d: Partial<Offre>) => fetchAPI<Offre>("/offres/", { method: "POST", body: JSON.stringify(d) }),
-    update: (id: number, d: Partial<Offre>) => fetchAPI<Offre>(`/offres/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
-    delete: (id: number) => fetch(`${API}/offres/${id}`, { method: "DELETE" }),
-  },
-  options: {
-    list: (cat?: string) => fetchAPI<Option[]>(`/options/${cat ? "?categorie=" + cat : ""}`),
-    create: (d: Partial<Option>) => fetchAPI<Option>("/options/", { method: "POST", body: JSON.stringify(d) }),
-    update: (id: number, d: Partial<Option>) => fetchAPI<Option>(`/options/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
-  },
-  clients: {
-    list: (q?: string) => fetchAPI<Client[]>(`/clients/${q ? "?q=" + q : ""}`),
-    create: (d: Partial<Client>) => fetchAPI<Client>("/clients/", { method: "POST", body: JSON.stringify(d) }),
-    update: (id: number, d: Partial<Client>) => fetchAPI<Client>(`/clients/${id}`, { method: "PATCH", body: JSON.stringify(d) }),
-  },
-  simulation: {
-    run: (d: Record<string, unknown>) => fetchAPI<Record<string, number>>("/simulation/", { method: "POST", body: JSON.stringify(d) }),
-  },
-  generation: {
-    facture: async (d: Record<string, unknown>): Promise<Blob> => {
-      const res = await fetch(`${API}/generation/facture`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) });
-      if (!res.ok) throw new Error(`Generation ${res.status}`);
-      return res.blob();
-    },
-  },
-};

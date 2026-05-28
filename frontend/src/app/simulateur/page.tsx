@@ -13,11 +13,11 @@ export default async function SimulateurPage() {
   let offres: Offre[] = [];
   try { offres = await serverFetch<Offre[]>("/offres/"); } catch {}
 
-  // Pre-charger les options pour toutes les offres (pour eviter un rechargement au changement d'offre)
-  const optionsByOffre: Record<number, OptS[]> = {};
+  // Pre-charger les options pour toutes les offres — cles STRING explicites
+  const optionsByOffre: Record<string, OptS[]> = {};
   for (const o of offres) {
     try {
-      optionsByOffre[o.id] = await serverFetch<OptS[]>(`/offres/${o.id}/options`);
+      optionsByOffre[String(o.id)] = await serverFetch<OptS[]>(`/offres/${o.id}/options`);
     } catch {}
   }
 

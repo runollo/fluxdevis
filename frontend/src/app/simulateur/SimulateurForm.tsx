@@ -19,7 +19,7 @@ interface OptS {
 type Result = Record<string, string>;
 
 export default function SimulateurForm({ offres, optionsByOffre }: {
-  offres: Offre[]; optionsByOffre: Record<number, OptS[]>;
+  offres: Offre[]; optionsByOffre: Record<string, OptS[]>;
 }) {
   const [offreId, setOffreId] = useState("");
   const [mode, setMode] = useState("Comptant");
@@ -43,7 +43,8 @@ export default function SimulateurForm({ offres, optionsByOffre }: {
   const [error, setError] = useState("");
 
   const offre = offreId ? offres.find(o => o.id === Number(offreId)) : null;
-  const options = offreId ? (optionsByOffre[offreId] || optionsByOffre[Number(offreId)] || []) : [];
+  const allKeys = Object.keys(optionsByOffre);
+  const options = offreId ? (optionsByOffre[offreId] || []) : [];
   const packs = options.filter(o => o.type_ligne === "PACK");
   const others = options.filter(o => o.type_ligne !== "PACK");
   const cats = new Map<string, OptS[]>();
@@ -119,6 +120,7 @@ export default function SimulateurForm({ offres, optionsByOffre }: {
               <div className="bg-gray-50 rounded-lg p-3 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Type</span><span className="font-medium">{offre.type_site}</span></div>
                 <div className="flex justify-between mt-1"><span className="text-gray-500">Prix catalogue</span><span className="font-medium">{eur(offre.tarif_vente_conseille)}</span></div>
+                <div className="flex justify-between mt-1"><span className="text-gray-500">Options chargees</span><span className="font-medium">{options.length} (cles: {allKeys.join(",")})</span></div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">

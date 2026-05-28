@@ -108,13 +108,18 @@ export default function SimulateurForm({ offres, optionsByOffre }: {
       <div className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-5 lg:gap-6">
         <div className="lg:col-span-3 space-y-4">
 
+          {/* DEBUG */}
+          <div className="bg-yellow-50 border border-yellow-300 rounded p-2 text-xs font-mono">
+            offreId=&quot;{offreId}&quot; | offre={offre ? offre.nom : "null"} | keys={allKeys.length} | options={options.length} | offres={offres.length}
+          </div>
+
           {/* Offre + Mode */}
           <div className="bg-white border rounded-lg p-4 space-y-4">
             <h2 className="text-sm font-semibold text-gray-500 uppercase">Offre et mode</h2>
             <select value={offreId} onChange={e => { setOffreId(e.target.value); setOptQty({}); setPackId(""); setResult(null); }}
               className="w-full border rounded px-3 py-2.5 text-sm">
               <option value="">Choisir une offre...</option>
-              {offres.map(o => <option key={o.id} value={o.id}>{o.nom} ({o.type_site}) - {eur(o.tarif_vente_conseille)}</option>)}
+              {offres.map(o => <option key={o.id} value={String(o.id)}>{o.nom} ({o.type_site}) - {eur(o.tarif_vente_conseille)}</option>)}
             </select>
             {offre && (
               <div className="bg-gray-50 rounded-lg p-3 text-sm">

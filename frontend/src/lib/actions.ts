@@ -164,8 +164,7 @@ export async function runSimulation(formData: FormData) {
 
   const result = await serverPost<Record<string, string>>("/simulation/", body);
 
-  // Encoder le resultat dans l'URL pour l'afficher
-  const resultParam = encodeURIComponent(JSON.stringify(result));
+  // Encoder TOUT l'etat du formulaire dans l'URL pour le restaurer apres redirect
   const params = new URLSearchParams({
     offre_id,
     mode,
@@ -173,7 +172,37 @@ export async function runSimulation(formData: FormData) {
     remise_setup: formData.get("remise_setup") as string || "0",
     remise_recurrent: formData.get("remise_recurrent") as string || "0",
     marge_add: formData.get("marge_add") as string || "0",
-    result: resultParam,
+    result: encodeURIComponent(JSON.stringify(result)),
   });
+
+  // Pack maintenance
+  if (packId) params.set("pack_id", String(packId));
+
+  // Options selectionnees (quantites > 0)
+  for (const opt of optionsData) {
+    if (opt.type_ligne === "PACK") continue;
+    const qty = Number(formData.get(`opt_${opt.id}`) || "0");
+    if (qty > 0) params.set(`opt_${opt.id}`, String(qty));
+  }
+
+  // Prestations sur mesure
+  for (let i = 1; i <= 3; i++) {
+    const nom = formData.get(`presta_${i}_nom`) as string;
+    if (nom) {
+      params.set(`presta_${i}_nom`, nom);
+      params.set(`presta_${i}_qty`, formData.get(`presta_${i}_qty`) as string || "0");
+      params.set(`presta_${i}_achat`, formData.get(`presta_${i}_achat`) as string || "0");
+      params.set(`presta_${i}_vente`, formData.get(`presta_${i}_vente`) as string || "0");
+    }
+  }
+
+  // Leasing
+  if (mode === "Leasing") {
+    params.set("duree_financement", formData.get("duree_financement") as string || "");
+    params.set("coefficient_locam", formData.get("coefficient_locam") as string || "3.20");
+    params.set("pct_maintenance", formData.get("pct_maintenance") as string || "30");
+    params.set("garantie_web", formData.get("garantie_web") as string || "10");
+  }
+
   redirect(`/simulateur?${params.toString()}`);
 }

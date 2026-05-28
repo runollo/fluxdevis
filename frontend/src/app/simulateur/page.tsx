@@ -1,25 +1,269 @@
-import { serverFetch, type Offre } from "@/lib/api";
-import SimulateurForm from "./SimulateurForm";
+import { serverFetch, serverPost, type Offre } from "@/lib/api";
+import { runSimulation } from "@/lib/actions";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
+function eur(v: number | string) {
+  return Number(v).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
+}
+function N(v: string | undefined) { return Number(v || 0); }
+
+const PLANS = ["100%", "50/50", "50/25/25", "25/25/25/25"];
+const DUREES = ["8 T (2 ans)", "12 T (3 ans)", "16 T (4 ans)", "20 T (5 ans)", "28 T (7 ans)"];
 
 interface OptS {
   id: number; code: string; nom: string; categorie: string; type_ligne: string;
   vente_setup: string; vente_mensuel: string; setup_achat: string; mensuel_achat: string;
-  statut: string; commentaire: string | null; ordre: number;
+  statut: string; commentaire: string | null;
 }
 
-export default async function SimulateurPage() {
-  let offres: Offre[] = [];
-  try { offres = await serverFetch<Offre[]>("/offres/"); } catch {}
+type Result = Record<string, string>;
 
-  // Pre-charger les options pour toutes les offres — cles STRING explicites
-  const optionsByOffre: Record<string, OptS[]> = {};
-  for (const o of offres) {
-    try {
-      optionsByOffre[String(o.id)] = await serverFetch<OptS[]>(`/offres/${o.id}/options`);
-    } catch {}
+export default async function SimulateurPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
+  const p = await searchParams;
+
+  let offres: Offre[] = [];
+  let options: OptS[] = [];
+  let error = "";
+  let result: Result | null = null;
+
+  try { offres = await serverFetch<Offre[]>("/offres/"); } catch (e) { error = String(e); }
+
+  const offreId = p.offre_id || "";
+  const offre = offreId ? offres.find(o => String(o.id) === offreId) : null;
+  const mode = p.mode || "Comptant";
+  const plan = p.plan || "100%";
+
+  if (offre) {
+    try { options = await serverFetch<OptS[]>(`/offres/${offre.id}/options`); } catch (e) { error = String(e); }
   }
 
-  return <SimulateurForm offres={offres} optionsByOffre={optionsByOffre} />;
+  if (p.result) {
+    try { result = JSON.parse(decodeURIComponent(p.result)); } catch {}
+  }
+
+  const packs = options.filter(o => o.type_ligne === "PACK");
+  const others = options.filter(o => o.type_ligne !== "PACK");
+  const cats = new Map<string, OptS[]>();
+  for (const o of others) { if (!cats.has(o.categorie)) cats.set(o.categorie, []); cats.get(o.categorie)!.push(o); }
+
+  if (error && !offres.length) return <p className="text-red-600 p-4">Erreur : {error}</p>;
+
+  // Si pas d'offre selectionnee : formulaire de selection
+  if (!offre) {
+    return (
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-4">Simulateur de prix</h1>
+        <form method="GET" action="/simulateur" className="bg-white border rounded-lg p-4 sm:p-6 max-w-lg space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Choisissez une offre</label>
+            <select name="offre_id" required className="w-full border rounded px-3 py-2.5 text-sm">
+              <option value="">-- Selectionnez --</option>
+              {offres.map(o => (
+                <option key={o.id} value={o.id}>{o.nom} ({o.type_site}) - {eur(o.tarif_vente_conseille)}</option>
+              ))}
+            </select>
+          </div>
+          <button type="submit" className="w-full py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">
+            Charger les options
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // Offre selectionnee : formulaire complet
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Simulateur de prix</h1>
+        <Link href="/simulateur" className="px-3 py-2 text-sm text-gray-500 border rounded hover:bg-gray-50">
+          Changer d&apos;offre
+        </Link>
+      </div>
+
+      {/* Info offre */}
+      <div className="bg-[#1A355E] text-white rounded-lg p-4 mb-4">
+        <h2 className="font-semibold">{offre.nom}</h2>
+        <div className="flex gap-4 text-sm mt-1 text-white/70">
+          <span>{offre.type_site}</span>
+          <span>{eur(offre.tarif_vente_conseille)} HT</span>
+          <span>{offre.pages} pages</span>
+          <span>{offre.heures} h</span>
+        </div>
+      </div>
+
+      <form action={runSimulation} className="space-y-4 lg:space-y-0 lg:grid lg:grid-cols-5 lg:gap-6">
+        <div className="lg:col-span-3 space-y-4">
+          <input type="hidden" name="offre_id" value={offre.id} />
+
+          {/* Mode + Remises */}
+          <div className="bg-white border rounded-lg p-4 space-y-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase">Mode et remises</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block text-sm font-medium mb-1">Mode</label>
+                <select name="mode" defaultValue={mode} className="w-full border rounded px-3 py-2.5 text-sm">
+                  <option>Comptant</option><option>Leasing</option></select></div>
+              <div><label className="block text-sm font-medium mb-1">Plan paiement</label>
+                <select name="plan" defaultValue={plan} className="w-full border rounded px-3 py-2.5 text-sm">
+                  {PLANS.map(v => <option key={v}>{v}</option>)}</select></div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div><label className="block text-sm font-medium mb-1">Remise setup %</label>
+                <input name="remise_setup" type="number" inputMode="decimal" min={0} max={100} defaultValue={p.remise_setup || "0"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+              <div><label className="block text-sm font-medium mb-1">Remise recur. %</label>
+                <input name="remise_recurrent" type="number" inputMode="decimal" min={0} max={100} defaultValue={p.remise_recurrent || "0"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+              <div><label className="block text-sm font-medium mb-1">Marge add.</label>
+                <input name="marge_add" type="number" inputMode="decimal" defaultValue={p.marge_add || "0"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+            </div>
+          </div>
+
+          {/* Leasing */}
+          <div className="bg-white border rounded-lg p-4 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase">Parametres leasing</h2>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block text-sm font-medium mb-1">Duree</label>
+                <select name="duree_financement" defaultValue={p.duree_financement || ""} className="w-full border rounded px-3 py-2.5 text-sm">
+                  <option value="">-</option>{DUREES.map(d => <option key={d}>{d}</option>)}</select></div>
+              <div><label className="block text-sm font-medium mb-1">Coeff. Locam</label>
+                <input name="coefficient_locam" type="number" inputMode="decimal" step="0.01" defaultValue={p.coefficient_locam || "3.20"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+              <div><label className="block text-sm font-medium mb-1">% Maintenance</label>
+                <input name="pct_maintenance" type="number" inputMode="decimal" min={0} max={100} defaultValue={p.pct_maintenance || "30"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+              <div><label className="block text-sm font-medium mb-1">Garantie web</label>
+                <input name="garantie_web" type="number" inputMode="decimal" step="0.01" defaultValue={p.garantie_web || "10"} className="w-full border rounded px-3 py-2.5 text-sm" /></div>
+            </div>
+          </div>
+
+          {/* Prestations sur mesure */}
+          <div className="bg-white border rounded-lg p-4 space-y-3">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase">Prestations sur mesure</h2>
+            {[1, 2, 3].map(i => (
+              <div key={i} className="grid grid-cols-4 gap-2">
+                <div className="col-span-4 sm:col-span-1">
+                  <input name={`presta_${i}_nom`} placeholder={`Prestation ${i}`} defaultValue={p[`presta_${i}_nom`] || ""} className="w-full border rounded px-3 py-2 text-sm" /></div>
+                <input name={`presta_${i}_qty`} type="number" inputMode="numeric" placeholder="Qte" min={0} defaultValue={p[`presta_${i}_qty`] || "0"} className="w-full border rounded px-3 py-2 text-sm" />
+                <input name={`presta_${i}_achat`} type="number" inputMode="decimal" step="0.01" placeholder="PU achat" defaultValue={p[`presta_${i}_achat`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
+                <input name={`presta_${i}_vente`} type="number" inputMode="decimal" step="0.01" placeholder="PU vente" defaultValue={p[`presta_${i}_vente`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
+              </div>
+            ))}
+          </div>
+
+          {/* Pack maintenance */}
+          {packs.length > 0 && (
+            <div className="bg-white border rounded-lg p-4 space-y-3">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase">Pack maintenance</h2>
+              <div className="space-y-2">
+                <label className={`flex items-center gap-3 p-2 rounded cursor-pointer ${!p.pack_id ? "bg-gray-50" : "hover:bg-gray-50"}`}>
+                  <input type="radio" name="pack_id" value="" defaultChecked={!p.pack_id} className="accent-[#1A355E]" />
+                  <span className="text-sm text-gray-500">Aucun pack</span></label>
+                {packs.map(pk => {
+                  const sel = p.pack_id === String(pk.id);
+                  return (
+                    <label key={pk.id} className={`flex items-center justify-between gap-3 p-2 rounded cursor-pointer ${sel ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50"}`}>
+                      <div className="flex items-center gap-3">
+                        <input type="radio" name="pack_id" value={pk.id} defaultChecked={sel} className="accent-[#1A355E]" />
+                        <div><span className={`text-sm font-medium ${sel ? "text-blue-900" : ""}`}>{pk.nom}</span>
+                          {pk.commentaire && <p className="text-xs text-gray-400">{pk.commentaire}</p>}</div>
+                      </div>
+                      <span className="text-sm font-medium shrink-0">{eur(pk.vente_mensuel)}/mois</span>
+                    </label>);
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Options */}
+          {others.length > 0 && (
+            <div className="bg-white border rounded-lg p-4 space-y-4">
+              <h2 className="text-sm font-semibold text-gray-500 uppercase">Options ({others.length})</h2>
+              {Array.from(cats.entries()).map(([cat, opts]) => (
+                <div key={cat}>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">{cat}</h3>
+                  <div className="space-y-1">
+                    {opts.map(o => {
+                      const incl = o.statut === "Inclus";
+                      const savedQty = p[`opt_${o.id}`] || "0";
+                      const sel = Number(savedQty) > 0;
+                      const prix = o.type_ligne === "OPTION_SETUP" ? o.vente_setup : o.vente_mensuel;
+                      const u = o.type_ligne === "OPTION_SETUP" ? "" : "/mois";
+                      const bg = incl ? "bg-green-50" : sel ? "bg-blue-50 border border-blue-200" : "";
+                      return (
+                        <div key={o.id} className={`flex items-center justify-between gap-2 p-2 rounded text-sm ${bg}`}>
+                          <div className="flex-1 min-w-0">
+                            <span className={incl ? "text-green-800" : sel ? "text-blue-900 font-medium" : ""}>{o.nom}</span>
+                            {incl && <span className="ml-2 text-xs text-green-600 font-medium">Inclus</span>}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-gray-400">{N(prix) > 0 ? `${eur(prix)}${u}` : ""}</span>
+                            {incl ? (
+                              <input type="hidden" name={`opt_${o.id}`} value="1" />
+                            ) : (
+                              <select name={`opt_${o.id}`} defaultValue={savedQty}
+                                className={`w-16 border rounded px-2 py-1 text-sm text-center ${sel ? "border-blue-300 bg-blue-50 font-medium" : ""}`}>
+                                {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
+                              </select>
+                            )}
+                          </div>
+                        </div>);
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Boutons */}
+          <div className="flex gap-3">
+            <button type="submit" className="flex-1 py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">Simuler</button>
+            <Link href="/simulateur" className="px-6 py-3 bg-gray-100 text-gray-600 rounded-lg text-sm text-center">Reset</Link>
+          </div>
+          {error && <p className="text-red-600 text-sm mt-2">{error}</p>}
+        </div>
+
+        {/* Resultats */}
+        <div className="lg:col-span-2">
+          <div className="bg-white border rounded-lg p-4 sm:p-5 lg:sticky lg:top-4">
+            <h2 className="text-lg font-semibold mb-4">Resultats</h2>
+            {!result ? <p className="text-gray-400 text-sm">Cliquez Simuler pour voir les resultats.</p> : (
+              <div className="space-y-3 text-sm">
+                <Sec t="Prix"><R l="Prix vente final HT" v={eur(result.prix_vente_final)} b /><R l="Setup affiche HT" v={eur(result.prix_setup_affiche)} /><R l="Mensuel affiche HT" v={eur(result.prix_mensuel_affiche)} /></Sec>
+                <Sec t="Totaux TTC"><R l="Setup TTC" v={eur(result.total_setup_ttc)} b /><R l="Mensuel TTC" v={eur(result.total_mensuel_ttc)} /></Sec>
+                {(N(result.total_prestations_vente) > 0 || N(result.total_options_setup_vente) > 0 || N(result.total_pack_maintenance_vente) > 0) && (
+                  <Sec t="Detail">
+                    {N(result.total_prestations_vente) > 0 && <R l="Prestations" v={eur(result.total_prestations_vente)} />}
+                    {N(result.total_options_setup_vente) > 0 && <R l="Options setup" v={eur(result.total_options_setup_vente)} />}
+                    {N(result.total_pack_maintenance_vente) > 0 && <R l="Pack maintenance" v={eur(result.total_pack_maintenance_vente)} />}
+                    {N(result.total_options_recurrent_vente) > 0 && <R l="Options recurrentes" v={eur(result.total_options_recurrent_vente)} />}
+                  </Sec>)}
+                <Sec t="Remises"><R l="Remise setup" v={eur(result.remise_eur_setup)} /><R l="Remise recurrent" v={eur(result.remise_eur_recurrent)} /></Sec>
+                <Sec t="Marge"><R l="Marge" v={eur(result.marge)} /><R l="Marge totale" v={eur(result.marge_totale)} b /></Sec>
+                {mode === "Comptant" && N(result.prelevement_1) > 0 && (
+                  <Sec t="Plan de paiement">
+                    <R l="Prelevement 1" v={eur(result.prelevement_1)} />
+                    {N(result.prelevement_2) > 0 && <R l="Prelevement 2" v={eur(result.prelevement_2)} />}
+                    {N(result.prelevement_3) > 0 && <R l="Prelevement 3" v={eur(result.prelevement_3)} />}
+                    {N(result.prelevement_4) > 0 && <R l="Prelevement 4" v={eur(result.prelevement_4)} />}
+                    {N(result.recurrent_mensuel) > 0 && <R l="Recurrent mensuel" v={eur(result.recurrent_mensuel)} />}
+                  </Sec>)}
+                {mode === "Leasing" && N(result.loyer) > 0 && (
+                  <Sec t="Leasing">
+                    <R l="Montant finance" v={eur(result.montant_finance)} />
+                    <R l="Loyer" v={eur(result.loyer)} />
+                    <R l="Loyer client HT" v={eur(result.loyer_client_ht)} b />
+                  </Sec>)}
+              </div>
+            )}
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Sec({ t, children }: { t: string; children: React.ReactNode }) {
+  return (<div className="border-t pt-3"><h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">{t}</h3><div className="space-y-1.5">{children}</div></div>);
+}
+function R({ l, v, b }: { l: string; v: string; b?: boolean }) {
+  return (<div className="flex justify-between gap-2"><span className="text-gray-600">{l}</span><span className={`text-right shrink-0 ${b ? "font-semibold" : ""}`}>{v}</span></div>);
 }

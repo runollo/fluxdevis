@@ -69,7 +69,7 @@ fluxdevis/
 - **Societe** : emetteur des documents (BLUELINK INNOVATIONS)
 - **Client** : prospects et clients (ex contact.xlsx)
 - **Offre** : catalogue des offres web (10 offres Webflow/Shopify)
-- **Option** : options et packs maintenance (52 options, 15 categories)
+- **Option** : options et packs maintenance (44 options, 15 categories)
 - **Devis** : devis avec snapshot des prix figes + lignes + options + articles offerts
 - **Facture** : acomptes et maintenance avec echeances et statut de paiement
 

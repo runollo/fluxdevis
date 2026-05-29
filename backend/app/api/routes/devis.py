@@ -1,7 +1,9 @@
 """Routes pour les devis."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from decimal import Decimal
@@ -11,7 +13,9 @@ from app.core.database import get_db
 from app.models.devis import Devis, DevisOptionLigne, StatutDevis, ModeReglement, PlanPaiement
 from app.models.client import Client
 from app.models.offre import Offre
+from app.models.societe import Societe
 from app.services.reference import generer_reference_devis
+from app.services.generation_devis import generer_devis
 
 router = APIRouter()
 
@@ -88,6 +92,33 @@ async def get_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     if not devis:
         raise HTTPException(404, "Devis non trouve")
     return devis
+
+
+@router.get("/{devis_id}/document")
+async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Genere et retourne le devis au format Word (.docx)."""
+    result = await db.execute(
+        select(Devis)
+        .where(Devis.id == devis_id)
+        .options(
+            selectinload(Devis.lignes),
+            selectinload(Devis.options),
+            selectinload(Devis.articles_offerts),
+        )
+    )
+    devis = result.scalar_one_or_none()
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+
+    societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
+
+    buf = generer_devis(devis, societe)
+    filename = f"Devis_{devis.reference}.docx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/", response_model=DevisSummary, status_code=201)

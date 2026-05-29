@@ -20,11 +20,16 @@ async function proxy(req: NextRequest) {
   });
 
   const data = await res.arrayBuffer();
+  const outHeaders: Record<string, string> = {
+    "content-type": res.headers.get("content-type") || "application/json",
+  };
+  // Preserver le nom de fichier pour les telechargements (devis/factures Word)
+  const disposition = res.headers.get("content-disposition");
+  if (disposition) outHeaders["content-disposition"] = disposition;
+
   return new NextResponse(data, {
     status: res.status,
-    headers: {
-      "content-type": res.headers.get("content-type") || "application/json",
-    },
+    headers: outHeaders,
   });
 }
 

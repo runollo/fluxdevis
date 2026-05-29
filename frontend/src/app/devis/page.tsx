@@ -58,6 +58,12 @@ export default async function DevisPage() {
                   <span className="font-semibold">{eur(d.total_ttc)}</span>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{d.date_emission} - {d.mode_reglement}</p>
+                <a
+                  href={`/api/devis/${d.id}/document`}
+                  className="mt-3 block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium"
+                >
+                  Telecharger le devis (Word)
+                </a>
               </div>
             ))}
           </div>
@@ -73,6 +79,7 @@ export default async function DevisPage() {
                   <th className="px-4 py-3 font-medium">Mode</th>
                   <th className="px-4 py-3 font-medium text-right">Total TTC</th>
                   <th className="px-4 py-3 font-medium">Statut</th>
+                  <th className="px-4 py-3 font-medium text-right">Document</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -88,6 +95,11 @@ export default async function DevisPage() {
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[d.statut] || "bg-gray-100 text-gray-700"}`}>
                         {d.statut}
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <a href={`/api/devis/${d.id}/document`} className="text-[#1A355E] hover:underline font-medium">
+                        Telecharger
+                      </a>
                     </td>
                   </tr>
                 ))}

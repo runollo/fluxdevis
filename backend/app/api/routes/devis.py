@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -14,8 +14,10 @@ from app.models.devis import Devis, DevisOptionLigne, StatutDevis, ModeReglement
 from app.models.client import Client
 from app.models.offre import Offre
 from app.models.societe import Societe
+from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, StatutFacture
+from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis
-from app.services.generation_devis import generer_devis
+from app.services.generation_devis import generer_devis, repartition_echeances
 
 router = APIRouter()
 
@@ -119,6 +121,102 @@ async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+_TVA = Decimal("0.20")
+
+
+def _ht_from_ttc(ttc: Decimal) -> Decimal:
+    return (ttc / (Decimal("1") + _TVA)).quantize(Decimal("0.01"))
+
+
+class FactureGenereeInfo(BaseModel):
+    id: int
+    numero: str
+    type: str
+    total_ttc: Decimal
+
+
+@router.post("/{devis_id}/factures", response_model=list[FactureGenereeInfo], status_code=201)
+async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Genere les factures d'acompte d'un devis selon son plan de paiement.
+
+    Une facture par echeance du plan (100%, 50/50, 50/25/25, 25/25/25/25).
+    La derniere echeance est de type SOLDE, les precedentes ACOMPTE.
+    """
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+
+    # Idempotence : ne pas regenerer si des factures existent deja
+    existantes = await db.execute(
+        select(func.count()).select_from(Facture).where(Facture.devis_id == devis_id)
+    )
+    if (existantes.scalar() or 0) > 0:
+        raise HTTPException(400, "Des factures existent deja pour ce devis")
+
+    plan = devis.plan_paiement.value if devis.plan_paiement else "100%"
+    parts = repartition_echeances(plan, devis.total_ttc)
+    nb = len(parts)
+
+    # Echeancier complet (commun a toutes les factures, pour affichage Word)
+    plan_rows = [
+        {"label": label, "date": devis.date_emission.strftime("%d/%m/%Y"), "ttc": ttc}
+        for label, ttc in parts
+    ]
+
+    creees: list[Facture] = []
+    for idx, (label, ttc) in enumerate(parts):
+        ht = _ht_from_ttc(ttc)
+        tva = ttc - ht
+        is_solde = idx == nb - 1
+        type_f = TypeFacture.SOLDE if (is_solde and nb > 1) else TypeFacture.ACOMPTE
+        type_label = "Solde" if type_f == TypeFacture.SOLDE else f"Acompte {idx + 1}/{nb}"
+
+        numero = generer_reference_facture(devis.client_raison_sociale, num_facture=idx + 1)
+        objet = f"{type_label} sur devis {devis.reference} — {devis.offre_nom}"
+
+        # Collections passees au constructeur pour eviter un lazy-load (contexte async)
+        ligne = FactureLigne(
+            ordre=0, designation=objet, quantite=1,
+            prix_unitaire_ht=ht, taux_tva=_TVA, montant_ht=ht,
+        )
+        echeances_facture = [
+            Echeance(
+                numero=e_idx + 1,
+                label=row["label"],
+                date_echeance=devis.date_emission,
+                montant_ht=_ht_from_ttc(row["ttc"]),
+                montant_ttc=row["ttc"],
+                payee=e_idx < idx,
+            )
+            for e_idx, row in enumerate(plan_rows)
+        ]
+
+        facture = Facture(
+            numero=numero,
+            type=type_f,
+            statut=StatutFacture.BROUILLON,
+            devis_id=devis.id,
+            date_emission=date.today(),
+            date_echeance=date.today(),
+            objet=objet,
+            total_ht=ht,
+            total_tva=tva,
+            total_ttc=ttc,
+            lignes=[ligne],
+            echeances=echeances_facture,
+        )
+        db.add(facture)
+        creees.append(facture)
+
+    await db.commit()
+    for f in creees:
+        await db.refresh(f)
+    return [
+        FactureGenereeInfo(id=f.id, numero=f.numero, type=f.type.value, total_ttc=f.total_ttc)
+        for f in creees
+    ]
 
 
 @router.post("/", response_model=DevisSummary, status_code=201)

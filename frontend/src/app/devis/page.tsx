@@ -1,4 +1,5 @@
 import { serverFetch } from "@/lib/api";
+import { genererFactures } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -58,12 +59,23 @@ export default async function DevisPage() {
                   <span className="font-semibold">{eur(d.total_ttc)}</span>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{d.date_emission} - {d.mode_reglement}</p>
-                <a
-                  href={`/api/devis/${d.id}/document`}
-                  className="mt-3 block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium"
-                >
-                  Telecharger le devis (Word)
-                </a>
+                <div className="mt-3 flex flex-col gap-2">
+                  <a
+                    href={`/api/devis/${d.id}/document`}
+                    className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium"
+                  >
+                    Telecharger le devis (Word)
+                  </a>
+                  <form action={genererFactures}>
+                    <input type="hidden" name="devis_id" value={d.id} />
+                    <button
+                      type="submit"
+                      className="block w-full text-center px-3 py-2 bg-[#1A355E] text-white rounded text-sm font-medium"
+                    >
+                      Generer les factures
+                    </button>
+                  </form>
+                </div>
               </div>
             ))}
           </div>
@@ -96,10 +108,16 @@ export default async function DevisPage() {
                         {d.statut}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       <a href={`/api/devis/${d.id}/document`} className="text-[#1A355E] hover:underline font-medium">
-                        Telecharger
+                        Devis
                       </a>
+                      <form action={genererFactures} className="inline">
+                        <input type="hidden" name="devis_id" value={d.id} />
+                        <button type="submit" className="ml-3 text-[#1A355E] hover:underline font-medium">
+                          Generer factures
+                        </button>
+                      </form>
                     </td>
                   </tr>
                 ))}

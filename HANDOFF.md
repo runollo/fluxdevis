@@ -179,14 +179,23 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
 
 ## Phases a venir
 
-### Phase A — Generation devis Word/PDF (priorite haute)
-- Bouton "Telecharger le devis" sur la page devis
-- Generer un document Word professionnel avec infos client, offre, options, prix
-- Le service backend `generation_facture.py` existe, l'adapter pour les devis
+### Phase A — Generation devis Word (terminee 2026-05-29)
+- Service `generation_devis.py` : devis Word professionnel (offre, prestations,
+  options payantes + incluses, maintenance mensuelle, articles offerts, totaux,
+  echeancier selon plan, bloc leasing, zone signature "Bon pour accord")
+- Endpoint `GET /api/devis/{id}/document` (StreamingResponse docx)
+- Proxy Next.js transmet desormais `Content-Disposition` (nom de fichier preserve)
+- Page /devis : bouton "Telecharger le devis (Word)" (a href, zero JS client)
 
-### Phase B — Generation factures (priorite haute)
-- Depuis un devis accepte, generer les factures d'acompte selon le plan de paiement
-- Service `generation_facture.py` deja fonctionnel, l'integrer au frontend
+### Phase B — Generation factures (terminee 2026-05-29)
+- Endpoint `POST /api/devis/{id}/factures` : cree une facture par echeance du plan
+  (100% -> 1 facture ; 50/50 ; 50/25/25 ; 25/25/25/25). Derniere = SOLDE, sinon ACOMPTE.
+  Idempotent (400 si des factures existent deja). Repartition via
+  `repartition_echeances()` dans `generation_devis.py` (mutualisee avec l'echeancier devis).
+- Endpoint `GET /api/factures/{id}/document` : facture Word (reutilise `generation_facture.py`),
+  echeancier avec versements payes barres et echeance courante en surbrillance.
+- Frontend : nouvelle page `/factures` (liste + telechargement), bouton "Generer les factures"
+  sur /devis (Server Action `genererFactures`), lien Factures dans la Sidebar.
 
 ### Phase C — Dashboard dynamique
 - Vrais compteurs depuis la BDD (nb offres, clients, devis, factures)

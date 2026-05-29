@@ -43,6 +43,26 @@ _PLAN_PARTS = {
 }
 
 
+def repartition_echeances(plan: str | None, total_ttc) -> list[tuple[str, Decimal]]:
+    """Repartit un montant TTC selon le plan de paiement.
+
+    Retourne une liste de tuples (libelle, montant_ttc). Le dernier versement
+    absorbe le reste pour eviter les ecarts d'arrondi.
+    """
+    parts = _PLAN_PARTS.get(plan or "100%", _PLAN_PARTS["100%"])
+    ttc = _q(total_ttc)
+    out: list[tuple[str, Decimal]] = []
+    cumul = D("0")
+    for i, (label, pct) in enumerate(parts):
+        if i == len(parts) - 1:
+            montant = ttc - cumul
+        else:
+            montant = _q(ttc * pct)
+            cumul += montant
+        out.append((label, montant))
+    return out
+
+
 def generer_devis(devis, societe) -> BytesIO:
     """Genere un devis Word et retourne un buffer BytesIO.
 
@@ -319,15 +339,13 @@ def _add_totaux(doc, devis):
 
 
 def _add_echeancier(doc, devis):
-    plan = _plan_label(devis)
-    parts = _PLAN_PARTS.get(plan)
-    if not parts or len(parts) == 1:
+    parts = repartition_echeances(_plan_label(devis), devis.total_ttc)
+    if len(parts) <= 1:
         return  # 100 % : pas d'echeancier a detailler
 
     p = doc.add_paragraph()
     run(p, "Échéancier de paiement", bold=True, size=9, color=C_NAVY)
 
-    ttc = _q(devis.total_ttc)
     tbl = doc.add_table(rows=1 + len(parts), cols=2)
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
@@ -336,13 +354,7 @@ def _add_echeancier(doc, devis):
         cell_text(tbl.rows[0].cells[i], h, bold=True, size=8, color=C_WHITE,
                   align=WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT)
 
-    cumul = D("0")
-    for idx, (label, pct) in enumerate(parts, start=1):
-        if idx == len(parts):
-            montant = ttc - cumul  # solde = reste pour eviter les arrondis
-        else:
-            montant = _q(ttc * pct)
-            cumul += montant
+    for idx, (label, montant) in enumerate(parts, start=1):
         cell_w(tbl.rows[idx].cells[0], 14)
         cell_w(tbl.rows[idx].cells[1], 3)
         cell_text(tbl.rows[idx].cells[0], label, size=8)

@@ -255,3 +255,17 @@ export async function saveDevis(formData: FormData) {
   await serverPost("/devis/", data);
   redirect("/devis");
 }
+
+
+export async function genererFactures(formData: FormData) {
+  const devisId = formData.get("devis_id") as string;
+  if (!devisId) redirect("/devis");
+
+  try {
+    await serverPost(`/devis/${devisId}/factures`, {});
+  } catch {
+    // Factures deja generees ou erreur : on redirige vers la liste des factures
+    redirect("/factures?erreur=1");
+  }
+  redirect("/factures");
+}

@@ -206,3 +206,52 @@ export async function runSimulation(formData: FormData) {
 
   redirect(`/simulateur?${params.toString()}`);
 }
+
+
+export async function saveDevis(formData: FormData) {
+  const client_id = formData.get("client_id") as string;
+  const offre_id = formData.get("offre_id") as string;
+  if (!client_id || !offre_id) redirect("/simulateur");
+
+  const resultJson = formData.get("result_json") as string;
+  if (!resultJson) redirect("/simulateur");
+
+  const result = JSON.parse(resultJson);
+
+  // Construire les options selectionnees pour le devis
+  const optionsJson = formData.get("options_json") as string;
+  const options = optionsJson ? JSON.parse(optionsJson) : [];
+
+  const data = {
+    client_id: Number(client_id),
+    offre_id: Number(offre_id),
+    mode_reglement: formData.get("mode") || "Comptant",
+    plan_paiement: formData.get("plan") || "100%",
+    prix_vente_final: result.prix_vente_final,
+    total_prestations_ht: result.total_prestations_vente || "0",
+    total_options_setup_ht: result.total_options_setup_vente || "0",
+    total_pack_maintenance_ht: result.total_pack_maintenance_vente || "0",
+    total_options_recurrent_ht: result.total_options_recurrent_vente || "0",
+    remise_pct_setup: formData.get("remise_setup") || "0",
+    remise_pct_recurrent: formData.get("remise_recurrent") || "0",
+    remise_eur_setup: result.remise_eur_setup || "0",
+    remise_eur_recurrent: result.remise_eur_recurrent || "0",
+    marge_additionnelle: formData.get("marge_add") || "0",
+    total_ht: result.prix_setup_affiche || "0",
+    total_tva: result.total_setup_tva || "0",
+    total_ttc: result.total_setup_ttc || "0",
+    options: options.map((o: Record<string, unknown>) => ({
+      option_id: o.option_id,
+      code: o.code,
+      nom: o.nom,
+      type_ligne: o.type_ligne,
+      quantite: o.quantite,
+      prix_setup_ht: o.prix_vente_setup || "0",
+      prix_mensuel_ht: o.prix_vente_mensuel || "0",
+      inclus: o.statut === "Inclus",
+    })),
+  };
+
+  await serverPost("/devis/", data);
+  redirect("/devis");
+}

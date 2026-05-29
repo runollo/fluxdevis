@@ -1,5 +1,5 @@
-import { serverFetch, serverPost, type Offre } from "@/lib/api";
-import { runSimulation } from "@/lib/actions";
+import { serverFetch, serverPost, type Offre, type Client } from "@/lib/api";
+import { runSimulation, saveDevis } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +24,13 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
   const p = await searchParams;
 
   let offres: Offre[] = [];
+  let clients: Client[] = [];
   let options: OptS[] = [];
   let error = "";
   let result: Result | null = null;
 
   try { offres = await serverFetch<Offre[]>("/offres/"); } catch (e) { error = String(e); }
+  try { clients = await serverFetch<Client[]>("/clients/"); } catch {}
 
   const offreId = p.offre_id || "";
   const offre = offreId ? offres.find(o => String(o.id) === offreId) : null;
@@ -255,6 +257,43 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
               </div>
             )}
           </div>
+
+          {/* Enregistrer le devis */}
+          {result && (
+            <div className="bg-white border-2 border-green-200 rounded-lg p-4 mt-4">
+              <h2 className="text-sm font-semibold text-green-800 uppercase mb-3">Enregistrer ce devis</h2>
+              <form action={saveDevis}>
+                <input type="hidden" name="offre_id" value={offre.id} />
+                <input type="hidden" name="mode" value={mode} />
+                <input type="hidden" name="plan" value={plan} />
+                <input type="hidden" name="remise_setup" value={p.remise_setup || "0"} />
+                <input type="hidden" name="remise_recurrent" value={p.remise_recurrent || "0"} />
+                <input type="hidden" name="marge_add" value={p.marge_add || "0"} />
+                <input type="hidden" name="result_json" value={JSON.stringify(result)} />
+                <input type="hidden" name="options_json" value={JSON.stringify(
+                  options.filter(o => o.statut === "Inclus" || Number(p[`opt_${o.id}`] || "0") > 0 || (o.type_ligne === "PACK" && p.pack_id === String(o.id)))
+                    .map(o => ({
+                      option_id: o.id, code: o.code, nom: o.nom, type_ligne: o.type_ligne,
+                      quantite: o.statut === "Inclus" ? 1 : (o.type_ligne === "PACK" ? 1 : Number(p[`opt_${o.id}`] || "0")),
+                      statut: o.statut,
+                      prix_vente_setup: o.vente_setup, prix_vente_mensuel: o.vente_mensuel,
+                    }))
+                )} />
+                <div className="mb-3">
+                  <label className="block text-sm font-medium mb-1">Client</label>
+                  <select name="client_id" required className="w-full border rounded px-3 py-2.5 text-sm">
+                    <option value="">-- Choisir le client --</option>
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>{c.raison_sociale}{c.ville ? ` (${c.ville})` : ""}</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit" className="w-full py-3 bg-green-700 text-white rounded-lg font-medium text-sm">
+                  Enregistrer le devis
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </form>
     </div>

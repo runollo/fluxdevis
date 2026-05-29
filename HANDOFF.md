@@ -189,9 +189,23 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
 
 ### Phase B — Generation factures (terminee 2026-05-29)
 - Endpoint `POST /api/devis/{id}/factures` : cree une facture par echeance du plan
-  (100% -> 1 facture ; 50/50 ; 50/25/25 ; 25/25/25/25). Derniere = SOLDE, sinon ACOMPTE.
+  (100% -> 1 facture ; 50/50 ; 33/33/33 ; 50/25/25 ; 25/25/25/25). Derniere = SOLDE, sinon ACOMPTE.
   Idempotent (400 si des factures existent deja). Repartition via
   `repartition_echeances()` dans `generation_devis.py` (mutualisee avec l'echeancier devis).
+
+### Plans de paiement et arrondi au centime (2026-05-29)
+- Plans disponibles : 100%, 50/50, 33/33/33, 50/25/25, 25/25/25/25 (enum `PlanPaiement`
+  + valeur PG `TIERS` ajoutee via `ALTER TYPE planpaiement ADD VALUE`).
+- Helper unique `app/services/echeances.py:repartir_au_centime(total, fractions)` : repartit
+  un montant selon des fractions EXACTES (Fraction, pas des pourcentages flottants), arrondit
+  chaque part au centime, et porte l'ecart d'arrondi sur le PREMIER versement pour que la somme
+  retombe EXACTEMENT sur le total. Ex 3612,92 en 33/33/33 -> 1204,30 / 1204,31 / 1204,31
+  (et non 1204,31 x3 = 3612,93). Utilise par `repartition_echeances` (echeancier devis +
+  factures, TTC) ET par `simulation.py` (prelevements).
+- ATTENTION : dans le simulateur, la section "Prelevements" est calculee sur le prix de vente
+  HT (`prix_vente_final`), alors que l'echeancier du devis/facture est en TTC. Les deux passent
+  par le meme helper mais sur des bases differentes (HT vs TTC). A unifier si Bruno veut voir
+  le meme montant partout (afficher l'echeancier TTC dans le simulateur).
 - Endpoint `GET /api/factures/{id}/document` : facture Word (reutilise `generation_facture.py`),
   echeancier avec versements payes barres et echeance courante en surbrillance.
 - Frontend : nouvelle page `/factures` (liste + telechargement), bouton "Generer les factures"

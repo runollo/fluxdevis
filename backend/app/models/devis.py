@@ -20,6 +20,7 @@ class ModeReglement(str, enum.Enum):
 class PlanPaiement(str, enum.Enum):
     CENT = "100%"
     CINQUANTE_CINQUANTE = "50/50"
+    TIERS = "33/33/33"
     CINQUANTE_VINGTCINQ_VINGTCINQ = "50/25/25"
     VINGTCINQ_X4 = "25/25/25/25"
 

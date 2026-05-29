@@ -6,9 +6,21 @@ sans dependance a openpyxl. Arithmetique Decimal pour la precision comptable.
 
 from decimal import Decimal, ROUND_HALF_UP
 from dataclasses import dataclass, field
+from fractions import Fraction
 import re
 
+from app.services.echeances import repartir_au_centime
+
 D = Decimal
+
+# Fractions exactes de chaque plan de paiement comptant (cf. echeances.py)
+_PLAN_FRACTIONS = {
+    "100%": [Fraction(1, 1)],
+    "50/50": [Fraction(1, 2), Fraction(1, 2)],
+    "33/33/33": [Fraction(1, 3), Fraction(1, 3), Fraction(1, 3)],
+    "50/25/25": [Fraction(1, 2), Fraction(1, 4), Fraction(1, 4)],
+    "25/25/25/25": [Fraction(1, 4), Fraction(1, 4), Fraction(1, 4), Fraction(1, 4)],
+}
 
 
 def _q(val) -> Decimal:
@@ -295,25 +307,14 @@ def simuler(inp: SimulationInput) -> SimulationResult:
         r.maintenance_reversee = _q(r.loyer * inp.pct_maintenance_locam)
         r.loyer_client_ht = _q(r.loyer * (1 + inp.pct_maintenance_locam) + inp.garantie_web * factor)
 
-    # Plan paiement comptant (lignes 40-43)
+    # Plan paiement comptant : prelevements exacts au centime (ecart sur le 1er
+    # versement). Memes montants que l'echeancier du devis/facture.
     if mode == "Comptant":
-        pvf = r.prix_vente_final
-        plan = inp.plan_paiement
-        if plan == "100%":
-            r.prelevement_1 = pvf
-        elif plan == "50/50":
-            r.prelevement_1 = _q(pvf * D("0.50"))
-            r.prelevement_2 = _q(pvf * D("0.50"))
-        elif plan == "50/25/25":
-            r.prelevement_1 = _q(pvf * D("0.50"))
-            r.prelevement_2 = _q(pvf * D("0.25"))
-            r.prelevement_3 = _q(pvf * D("0.25"))
-        elif plan == "25/25/25/25":
-            quart = _q(pvf * D("0.25"))
-            r.prelevement_1 = quart
-            r.prelevement_2 = quart
-            r.prelevement_3 = quart
-            r.prelevement_4 = quart
+        montants = repartir_au_centime(
+            r.prix_vente_final, _PLAN_FRACTIONS.get(inp.plan_paiement, [Fraction(1, 1)])
+        )
+        for i, montant in enumerate(montants, start=1):
+            setattr(r, f"prelevement_{i}", montant)
         r.recurrent_mensuel = _q(r.total_pack_maintenance_vente + r.total_options_recurrent_vente)
 
     # Totaux TTC

@@ -5,7 +5,10 @@ et de la Societe emettrice. Reutilise les helpers Word mutualises.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
+from fractions import Fraction
 from io import BytesIO
+
+from app.services.echeances import repartir_au_centime
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -25,20 +28,27 @@ def _q(val) -> Decimal:
     return Decimal(str(val or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-# Repartition des echeances selon le plan de paiement (comptant)
+# Repartition des echeances selon le plan de paiement (comptant).
+# Chaque echeance est definie par une fraction EXACTE (pas un pourcentage
+# flottant) pour que 33/33/33 corresponde a des tiers reels.
 _PLAN_PARTS = {
-    "100%": [("Solde", D("1.00"))],
-    "50/50": [("Acompte 50 %", D("0.50")), ("Solde 50 %", D("0.50"))],
+    "100%": [("Solde", Fraction(1, 1))],
+    "50/50": [("Acompte 50 %", Fraction(1, 2)), ("Solde 50 %", Fraction(1, 2))],
+    "33/33/33": [
+        ("Acompte 1/3", Fraction(1, 3)),
+        ("2e versement 1/3", Fraction(1, 3)),
+        ("Solde 1/3", Fraction(1, 3)),
+    ],
     "50/25/25": [
-        ("Acompte 50 %", D("0.50")),
-        ("2e versement 25 %", D("0.25")),
-        ("Solde 25 %", D("0.25")),
+        ("Acompte 50 %", Fraction(1, 2)),
+        ("2e versement 25 %", Fraction(1, 4)),
+        ("Solde 25 %", Fraction(1, 4)),
     ],
     "25/25/25/25": [
-        ("Acompte 25 %", D("0.25")),
-        ("2e versement 25 %", D("0.25")),
-        ("3e versement 25 %", D("0.25")),
-        ("Solde 25 %", D("0.25")),
+        ("Acompte 25 %", Fraction(1, 4)),
+        ("2e versement 25 %", Fraction(1, 4)),
+        ("3e versement 25 %", Fraction(1, 4)),
+        ("Solde 25 %", Fraction(1, 4)),
     ],
 }
 
@@ -46,21 +56,13 @@ _PLAN_PARTS = {
 def repartition_echeances(plan: str | None, total_ttc) -> list[tuple[str, Decimal]]:
     """Repartit un montant TTC selon le plan de paiement.
 
-    Retourne une liste de tuples (libelle, montant_ttc). Le dernier versement
-    absorbe le reste pour eviter les ecarts d'arrondi.
+    Retourne une liste de tuples (libelle, montant_ttc). La somme des montants
+    vaut exactement le total : l'ecart d'arrondi est porte par le premier
+    versement (cf. repartir_au_centime).
     """
     parts = _PLAN_PARTS.get(plan or "100%", _PLAN_PARTS["100%"])
-    ttc = _q(total_ttc)
-    out: list[tuple[str, Decimal]] = []
-    cumul = D("0")
-    for i, (label, pct) in enumerate(parts):
-        if i == len(parts) - 1:
-            montant = ttc - cumul
-        else:
-            montant = _q(ttc * pct)
-            cumul += montant
-        out.append((label, montant))
-    return out
+    montants = repartir_au_centime(total_ttc, [frac for _, frac in parts])
+    return [(label, montants[i]) for i, (label, _) in enumerate(parts)]
 
 
 def generer_devis(devis, societe) -> BytesIO:

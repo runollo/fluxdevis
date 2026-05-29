@@ -9,7 +9,7 @@ function eur(v: number | string) {
 }
 function N(v: string | undefined) { return Number(v || 0); }
 
-const PLANS = ["100%", "50/50", "50/25/25", "25/25/25/25"];
+const PLANS = ["100%", "50/50", "33/33/33", "50/25/25", "25/25/25/25"];
 const DUREES = ["8 T (2 ans)", "12 T (3 ans)", "16 T (4 ans)", "20 T (5 ans)", "28 T (7 ans)"];
 
 interface OptS {

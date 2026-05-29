@@ -28,6 +28,7 @@ router = APIRouter()
 _PLAN_MAP = {
     "100%": PlanPaiement.CENT,
     "50/50": PlanPaiement.CINQUANTE_CINQUANTE,
+    "33/33/33": PlanPaiement.TIERS,
     "50/25/25": PlanPaiement.CINQUANTE_VINGTCINQ_VINGTCINQ,
     "25/25/25/25": PlanPaiement.VINGTCINQ_X4,
 }

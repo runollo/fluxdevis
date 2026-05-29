@@ -358,16 +358,58 @@ export async function archiverFacture(formData: FormData) {
 }
 
 
+// Niveau 2 : annulation par avoir d'une facture emise. Exige la saisie du mot
+// SUPPRIMER (acte comptable engageant).
 export async function annulerFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";
+  const confirmation = ((formData.get("confirmation") as string) || "").trim();
   if (!id) redirect("/factures");
+  if (confirmation !== "SUPPRIMER") {
+    redirect(`/factures/confirmer?id=${id}&action=annuler&retour=${encodeURIComponent(retour)}&err=mot`);
+  }
   try {
     await serverPost(`/factures/${id}/annuler`, {});
   } catch (e) {
     redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
   }
   redirect(retour);
+}
+
+
+// Niveau 3 : suppression DEFINITIVE depuis la corbeille. Exige le mot SUPPRIMER
+// + la case "irreversible" cochee.
+export async function supprimerDevisDefinitif(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  const confirmation = ((formData.get("confirmation") as string) || "").trim();
+  const comprends = formData.get("comprends");
+  if (confirmation !== "SUPPRIMER" || !comprends) {
+    redirect(`/devis/confirmer?id=${id}&mode=definitif&err=mot`);
+  }
+  try {
+    await serverDelete(`/devis/${id}/definitif`);
+  } catch (e) {
+    redirect(`/devis/confirmer?id=${id}&mode=definitif&err=${encodeURIComponent(extraireDetail(e))}`);
+  }
+  redirect("/devis?archives=1");
+}
+
+
+export async function supprimerFactureDefinitif(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  if (!id) redirect("/factures");
+  const confirmation = ((formData.get("confirmation") as string) || "").trim();
+  const comprends = formData.get("comprends");
+  if (confirmation !== "SUPPRIMER" || !comprends) {
+    redirect(`/factures/confirmer?id=${id}&action=definitif&err=mot`);
+  }
+  try {
+    await serverDelete(`/factures/${id}/definitif`);
+  } catch (e) {
+    redirect(`/factures/confirmer?id=${id}&action=definitif&err=${encodeURIComponent(extraireDetail(e))}`);
+  }
+  redirect("/factures?archives=1");
 }
 
 

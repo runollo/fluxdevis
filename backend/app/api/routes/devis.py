@@ -319,6 +319,51 @@ async def restaurer_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     return devis
 
 
+@router.delete("/{devis_id}/definitif", status_code=204)
+async def supprimer_devis_definitif(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Suppression DEFINITIVE d'un devis (destruction physique) depuis la corbeille.
+
+    Garde-fous : le devis doit deja etre archive ; refus si une facture conservee
+    legalement (emise/payee/en retard/annulee) y est rattachee. Les seules factures
+    encore liees a ce stade (brouillons) sont detruites avec le devis.
+    """
+    result = await db.execute(
+        select(Devis)
+        .where(Devis.id == devis_id)
+        .options(
+            selectinload(Devis.lignes),
+            selectinload(Devis.options),
+            selectinload(Devis.articles_offerts),
+        )
+    )
+    devis = result.scalar_one_or_none()
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    if devis.archived_at is None:
+        raise HTTPException(400, "Mettez d'abord le devis dans la corbeille.")
+
+    factures = (
+        await db.execute(
+            select(Facture)
+            .where(Facture.devis_id == devis_id)
+            .options(selectinload(Facture.lignes), selectinload(Facture.echeances))
+        )
+    ).scalars().all()
+    conservees = [f for f in factures if f.statut != StatutFacture.BROUILLON]
+    if conservees:
+        numeros = ", ".join(f.numero for f in conservees)
+        raise HTTPException(
+            400,
+            "Suppression definitive impossible : des factures sont conservees "
+            f"legalement ({numeros}). Elles doivent rester en base.",
+        )
+
+    for f in factures:  # uniquement des brouillons
+        await db.delete(f)
+    await db.delete(devis)
+    await db.commit()
+
+
 class MiseEnLigneUpdate(BaseModel):
     date_mise_en_ligne: date | None = None
 

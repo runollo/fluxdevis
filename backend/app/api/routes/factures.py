@@ -331,3 +331,31 @@ async def restaurer_facture(facture_id: int, db: AsyncSession = Depends(get_db))
     await db.commit()
     await db.refresh(facture)
     return facture
+
+
+@router.delete("/{facture_id}/definitif", status_code=204)
+async def supprimer_facture_definitif(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Suppression DEFINITIVE d'une facture (destruction physique) depuis la corbeille.
+
+    Garde-fous : la facture doit deja etre archivee ET en brouillon. Une facture
+    emise/payee/en retard/annulee ne peut JAMAIS etre detruite (conservation legale
+    de 10 ans, numerotation sequentielle sans trou).
+    """
+    result = await db.execute(
+        select(Facture)
+        .where(Facture.id == facture_id)
+        .options(selectinload(Facture.lignes), selectinload(Facture.echeances))
+    )
+    facture = result.scalar_one_or_none()
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.archived_at is None:
+        raise HTTPException(400, "Mettez d'abord la facture dans la corbeille.")
+    if facture.statut != StatutFacture.BROUILLON:
+        raise HTTPException(
+            400,
+            "Suppression definitive interdite : une facture emise ou annulee doit "
+            "etre conservee (obligation legale).",
+        )
+    await db.delete(facture)
+    await db.commit()

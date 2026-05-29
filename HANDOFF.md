@@ -262,6 +262,23 @@ ALTER TABLE sur la base existante (le modele la porte pour les bases neuves).
   `restaurerFacture` (+ `serverDelete` dans `src/lib/api.ts`). Les messages du garde-fou
   sont affiches via le query param `suppr_msg`.
 
+### Garde-fous de suppression a 3 niveaux (2026-05-29)
+Toutes les actions destructives passent par une PAGE DE CONFIRMATION (pas de JS client,
+donc pas de pop-up) : `/devis/confirmer` et `/factures/confirmer` (Server Components).
+- Niveau 1 (leger, reversible) : mise en corbeille d'un devis ou d'une facture brouillon
+  -> page de confirmation, 1 clic "Confirmer la mise en corbeille".
+- Niveau 2 (fort, acte comptable) : annulation par avoir d'une facture emise -> page +
+  saisie obligatoire du mot `SUPPRIMER` (verifie cote Server Action `annulerFacture`).
+- Niveau 3 (critique, IRREVERSIBLE) : suppression DEFINITIVE depuis la corbeille -> page +
+  saisie `SUPPRIMER` + case "irreversible" cochee. Endpoints `DELETE /api/devis/{id}/definitif`
+  et `DELETE /api/factures/{id}/definitif` (hard-delete). Garde-fous backend : l'item doit
+  etre archive ; facture supprimable definitivement seulement si brouillon (jamais emise/
+  payee/annulee = conservation legale) ; devis supprimable seulement si aucune facture
+  conservee legalement n'y est rattachee (sinon 400). Server Actions `supprimerDevisDefinitif`
+  / `supprimerFactureDefinitif` revalident le mot + la case avant l'appel.
+- Le mot de confirmation est `SUPPRIMER` (choix de Bruno). Erreurs : `err=mot` (saisie
+  incorrecte) ou `err=<message API>` (garde-fou backend) affichees sur la page.
+
 ### Purge des donnees de test (hors UI)
 `scripts/purge_donnees.py` : TRUNCATE devis + factures (CASCADE, RESTART IDENTITY).
 Reserve au DEV/TEST pour repartir d'une base propre. Conserve catalogue, clients et

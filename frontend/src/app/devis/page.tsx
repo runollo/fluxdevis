@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, archiverDevis, restaurerDevis } from "@/lib/actions";
+import { genererFactures, restaurerDevis } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -126,12 +126,17 @@ export default async function DevisPage(
                 <p className="text-xs text-gray-400 mt-1">{d.date_emission} - {d.mode_reglement}</p>
                 <div className="mt-3 flex flex-col gap-2">
                   {corbeille ? (
-                    <form action={restaurerDevis}>
-                      <input type="hidden" name="devis_id" value={d.id} />
-                      <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-                        Restaurer
-                      </button>
-                    </form>
+                    <>
+                      <form action={restaurerDevis}>
+                        <input type="hidden" name="devis_id" value={d.id} />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                          Restaurer
+                        </button>
+                      </form>
+                      <Link href={`/devis/confirmer?id=${d.id}&mode=definitif`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                        Supprimer definitivement
+                      </Link>
+                    </>
                   ) : (
                     <>
                       <a href={`/api/devis/${d.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
@@ -144,13 +149,9 @@ export default async function DevisPage(
                           Generer les factures
                         </button>
                       </form>
-                      <form action={archiverDevis}>
-                        <input type="hidden" name="devis_id" value={d.id} />
-                        <input type="hidden" name="retour" value="/devis" />
-                        <button type="submit" className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
-                          Supprimer (corbeille)
-                        </button>
-                      </form>
+                      <Link href={`/devis/confirmer?id=${d.id}`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                        Supprimer
+                      </Link>
                     </>
                   )}
                 </div>
@@ -190,10 +191,15 @@ export default async function DevisPage(
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {corbeille ? (
-                        <form action={restaurerDevis} className="inline">
-                          <input type="hidden" name="devis_id" value={d.id} />
-                          <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
-                        </form>
+                        <>
+                          <form action={restaurerDevis} className="inline">
+                            <input type="hidden" name="devis_id" value={d.id} />
+                            <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
+                          </form>
+                          <Link href={`/devis/confirmer?id=${d.id}&mode=definitif`} className="ml-3 text-red-600 hover:underline font-medium">
+                            Supprimer def.
+                          </Link>
+                        </>
                       ) : (
                         <>
                           <a href={`/api/devis/${d.id}/document`} className="text-[#1A355E] hover:underline font-medium">
@@ -206,13 +212,9 @@ export default async function DevisPage(
                               Factures
                             </button>
                           </form>
-                          <form action={archiverDevis} className="inline">
-                            <input type="hidden" name="devis_id" value={d.id} />
-                            <input type="hidden" name="retour" value="/devis" />
-                            <button type="submit" className="ml-3 text-red-600 hover:underline font-medium">
-                              Supprimer
-                            </button>
-                          </form>
+                          <Link href={`/devis/confirmer?id=${d.id}`} className="ml-3 text-red-600 hover:underline font-medium">
+                            Supprimer
+                          </Link>
                         </>
                       )}
                     </td>

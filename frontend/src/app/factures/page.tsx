@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { archiverFacture, annulerFacture, restaurerFacture, envoyerFacture } from "@/lib/actions";
+import { restaurerFacture, envoyerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -34,20 +34,12 @@ const TYPE_LABELS: Record<string, string> = {
 function ActionsFacture({ f }: { f: Facture }) {
   if (f.statut === "brouillon") {
     return (
-      <form action={archiverFacture} className="inline">
-        <input type="hidden" name="facture_id" value={f.id} />
-        <input type="hidden" name="retour" value="/factures" />
-        <button type="submit" className="ml-3 text-red-600 hover:underline font-medium">Supprimer</button>
-      </form>
+      <Link href={`/factures/confirmer?id=${f.id}&action=archiver`} className="ml-3 text-red-600 hover:underline font-medium">Supprimer</Link>
     );
   }
   if (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") {
     return (
-      <form action={annulerFacture} className="inline">
-        <input type="hidden" name="facture_id" value={f.id} />
-        <input type="hidden" name="retour" value="/factures" />
-        <button type="submit" className="ml-3 text-orange-600 hover:underline font-medium">Annuler (avoir)</button>
-      </form>
+      <Link href={`/factures/confirmer?id=${f.id}&action=annuler`} className="ml-3 text-orange-600 hover:underline font-medium">Annuler (avoir)</Link>
     );
   }
   return null;
@@ -164,12 +156,17 @@ export default async function FacturesPage(
                   <span className="font-semibold">{eur(f.total_ttc)}</span>
                 </div>
                 {corbeille ? (
-                  <form action={restaurerFacture} className="mt-3">
-                    <input type="hidden" name="facture_id" value={f.id} />
-                    <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-                      Restaurer
-                    </button>
-                  </form>
+                  <div className="mt-3 flex flex-col gap-2">
+                    <form action={restaurerFacture}>
+                      <input type="hidden" name="facture_id" value={f.id} />
+                      <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                        Restaurer
+                      </button>
+                    </form>
+                    <Link href={`/factures/confirmer?id=${f.id}&action=definitif`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                      Supprimer definitivement
+                    </Link>
+                  </div>
                 ) : (
                   <div className="mt-3 flex flex-col gap-2">
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
@@ -183,22 +180,14 @@ export default async function FacturesPage(
                       </button>
                     </form>
                     {f.statut === "brouillon" && (
-                      <form action={archiverFacture}>
-                        <input type="hidden" name="facture_id" value={f.id} />
-                        <input type="hidden" name="retour" value="/factures" />
-                        <button type="submit" className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
-                          Supprimer (corbeille)
-                        </button>
-                      </form>
+                      <Link href={`/factures/confirmer?id=${f.id}&action=archiver`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                        Supprimer (corbeille)
+                      </Link>
                     )}
                     {(f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
-                      <form action={annulerFacture}>
-                        <input type="hidden" name="facture_id" value={f.id} />
-                        <input type="hidden" name="retour" value="/factures" />
-                        <button type="submit" className="block w-full text-center px-3 py-2 border border-orange-300 text-orange-600 rounded text-sm font-medium">
-                          Annuler (avoir)
-                        </button>
-                      </form>
+                      <Link href={`/factures/confirmer?id=${f.id}&action=annuler`} className="block w-full text-center px-3 py-2 border border-orange-300 text-orange-600 rounded text-sm font-medium">
+                        Annuler (avoir)
+                      </Link>
                     )}
                   </div>
                 )}
@@ -234,10 +223,13 @@ export default async function FacturesPage(
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
                       {corbeille ? (
-                        <form action={restaurerFacture} className="inline">
-                          <input type="hidden" name="facture_id" value={f.id} />
-                          <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
-                        </form>
+                        <>
+                          <form action={restaurerFacture} className="inline">
+                            <input type="hidden" name="facture_id" value={f.id} />
+                            <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
+                          </form>
+                          <Link href={`/factures/confirmer?id=${f.id}&action=definitif`} className="ml-3 text-red-600 hover:underline font-medium">Supprimer def.</Link>
+                        </>
                       ) : (
                         <>
                           <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline font-medium">

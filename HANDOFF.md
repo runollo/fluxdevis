@@ -214,10 +214,39 @@ Fait (2026-05-29) :
   endpoint `PATCH /api/devis/{id}/statut`, formulaire select+bouton sur le detail
   (Server Action `changerStatut`). Le bouton "Generer les factures" n'apparait que
   si aucune facture n'existe encore.
+- SUPPRESSION / CORBEILLE conforme au droit (voir section dediee ci-dessous).
 Reste a faire :
 - Recherche/filtres catalogue
 - Pagination
 - Export Excel
+
+### Suppression et corbeille (soft-delete) — cadre juridique
+Principe : aucune destruction physique via l'UI. Colonne `archived_at` (mixin
+`SoftDeleteMixin` dans `app/models/base.py`) sur `devis` et `factures`, ajoutee par
+ALTER TABLE sur la base existante (le modele la porte pour les bases neuves).
+- Devis : `DELETE /api/devis/{id}` archive (corbeille). Garde-fou : refuse si une
+  facture ENCORE ACTIVE (emise/payee/en_retard) est rattachee -> il faut d'abord
+  l'annuler (avoir). Les factures brouillon ET annulees sont archivees en cascade.
+  `POST /api/devis/{id}/restaurer` restaure.
+- Facture : `DELETE /api/factures/{id}` archive UNIQUEMENT si statut brouillon (jamais
+  emise). Une facture emise ne se supprime pas (numerotation legale sans trou) :
+  `POST /api/factures/{id}/annuler` la passe en ANNULEE (equivalent avoir), le numero
+  est conserve. `POST /api/factures/{id}/restaurer` restaure.
+- Listes (`/devis/`, `/factures/`) : excluent les archives par defaut ; `?archives=true`
+  retourne la corbeille. Dashboard et `devis_maintenance_dus` excluent aussi les archives.
+- Idempotence factures : la regeneration ne compte que les factures NON archivees
+  (on peut donc regenerer apres une mise a la corbeille).
+- Frontend : boutons Supprimer/Annuler/Restaurer + vues corbeille (`?archives=1`) sur
+  /devis, /factures et /devis/detail. Server Actions dans `src/lib/actions.ts` :
+  `archiverDevis`, `restaurerDevis`, `archiverFacture`, `annulerFacture`,
+  `restaurerFacture` (+ `serverDelete` dans `src/lib/api.ts`). Les messages du garde-fou
+  sont affiches via le query param `suppr_msg`.
+
+### Purge des donnees de test (hors UI)
+`scripts/purge_donnees.py` : TRUNCATE devis + factures (CASCADE, RESTART IDENTITY).
+Reserve au DEV/TEST pour repartir d'une base propre. Conserve catalogue, clients et
+societe. Demande confirmation ("oui") ; `--force` pour cron/CI.
+Usage : `python scripts/purge_donnees.py` depuis la racine du projet.
 
 ### Phase F — Facturation du recurrent / maintenance (terminee 2026-05-29)
 Flux INDEPENDANT du setup : la maintenance demarre a la mise en ligne du site,

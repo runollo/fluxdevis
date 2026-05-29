@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures } from "@/lib/actions";
+import { genererFactures, archiverDevis, restaurerDevis } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -14,30 +14,60 @@ interface Devis {
 }
 
 const STATUT_COLORS: Record<string, string> = {
-  BROUILLON: "bg-gray-100 text-gray-700",
-  ENVOYE: "bg-blue-100 text-blue-700",
-  ACCEPTE: "bg-green-100 text-green-700",
-  REFUSE: "bg-red-100 text-red-700",
-  EXPIRE: "bg-orange-100 text-orange-700",
+  brouillon: "bg-gray-100 text-gray-700",
+  envoye: "bg-blue-100 text-blue-700",
+  accepte: "bg-green-100 text-green-700",
+  refuse: "bg-red-100 text-red-700",
+  expire: "bg-orange-100 text-orange-700",
 };
 
-export default async function DevisPage() {
+export default async function DevisPage(
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string }> }
+) {
+  const params = await searchParams;
+  const corbeille = params.archives === "1";
+
   let devisList: Devis[] = [];
-  try { devisList = await serverFetch<Devis[]>("/devis/"); } catch {}
+  try {
+    devisList = await serverFetch<Devis[]>(`/devis/${corbeille ? "?archives=true" : ""}`);
+  } catch {}
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Devis ({devisList.length})</h1>
-        <Link href="/simulateur" className="px-4 py-2.5 bg-[#1A355E] text-white rounded text-sm font-medium text-center">
-          + Nouveau devis
-        </Link>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          {corbeille ? "Corbeille — devis" : "Devis"} ({devisList.length})
+        </h1>
+        <div className="flex gap-2">
+          {corbeille ? (
+            <Link href="/devis" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+              Retour aux devis
+            </Link>
+          ) : (
+            <>
+              <Link href="/devis?archives=1" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+                Corbeille
+              </Link>
+              <Link href="/simulateur" className="px-4 py-2.5 bg-[#1A355E] text-white rounded text-sm font-medium text-center">
+                + Nouveau devis
+              </Link>
+            </>
+          )}
+        </div>
       </div>
+
+      {params.suppr_msg && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
+          {params.suppr_msg}
+        </div>
+      )}
 
       {devisList.length === 0 ? (
         <div className="bg-white border rounded-lg p-8 text-center">
-          <p className="text-gray-400 mb-4">Aucun devis enregistre</p>
-          <Link href="/simulateur" className="text-blue-600 hover:underline text-sm">Creer un devis depuis le simulateur</Link>
+          <p className="text-gray-400 mb-4">{corbeille ? "Corbeille vide" : "Aucun devis enregistre"}</p>
+          {!corbeille && (
+            <Link href="/simulateur" className="text-blue-600 hover:underline text-sm">Creer un devis depuis le simulateur</Link>
+          )}
         </div>
       ) : (
         <>
@@ -60,21 +90,34 @@ export default async function DevisPage() {
                 </div>
                 <p className="text-xs text-gray-400 mt-1">{d.date_emission} - {d.mode_reglement}</p>
                 <div className="mt-3 flex flex-col gap-2">
-                  <a
-                    href={`/api/devis/${d.id}/document`}
-                    className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium"
-                  >
-                    Telecharger le devis (Word)
-                  </a>
-                  <form action={genererFactures}>
-                    <input type="hidden" name="devis_id" value={d.id} />
-                    <button
-                      type="submit"
-                      className="block w-full text-center px-3 py-2 bg-[#1A355E] text-white rounded text-sm font-medium"
-                    >
-                      Generer les factures
-                    </button>
-                  </form>
+                  {corbeille ? (
+                    <form action={restaurerDevis}>
+                      <input type="hidden" name="devis_id" value={d.id} />
+                      <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                        Restaurer
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <a href={`/api/devis/${d.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                        Telecharger le devis (Word)
+                      </a>
+                      <form action={genererFactures}>
+                        <input type="hidden" name="devis_id" value={d.id} />
+                        <input type="hidden" name="retour" value="/devis" />
+                        <button type="submit" className="block w-full text-center px-3 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">
+                          Generer les factures
+                        </button>
+                      </form>
+                      <form action={archiverDevis}>
+                        <input type="hidden" name="devis_id" value={d.id} />
+                        <input type="hidden" name="retour" value="/devis" />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                          Supprimer (corbeille)
+                        </button>
+                      </form>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -91,7 +134,7 @@ export default async function DevisPage() {
                   <th className="px-4 py-3 font-medium">Mode</th>
                   <th className="px-4 py-3 font-medium text-right">Total TTC</th>
                   <th className="px-4 py-3 font-medium">Statut</th>
-                  <th className="px-4 py-3 font-medium text-right">Document</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -111,15 +154,32 @@ export default async function DevisPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <a href={`/api/devis/${d.id}/document`} className="text-[#1A355E] hover:underline font-medium">
-                        Devis
-                      </a>
-                      <form action={genererFactures} className="inline">
-                        <input type="hidden" name="devis_id" value={d.id} />
-                        <button type="submit" className="ml-3 text-[#1A355E] hover:underline font-medium">
-                          Generer factures
-                        </button>
-                      </form>
+                      {corbeille ? (
+                        <form action={restaurerDevis} className="inline">
+                          <input type="hidden" name="devis_id" value={d.id} />
+                          <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
+                        </form>
+                      ) : (
+                        <>
+                          <a href={`/api/devis/${d.id}/document`} className="text-[#1A355E] hover:underline font-medium">
+                            Devis
+                          </a>
+                          <form action={genererFactures} className="inline">
+                            <input type="hidden" name="devis_id" value={d.id} />
+                            <input type="hidden" name="retour" value="/devis" />
+                            <button type="submit" className="ml-3 text-[#1A355E] hover:underline font-medium">
+                              Factures
+                            </button>
+                          </form>
+                          <form action={archiverDevis} className="inline">
+                            <input type="hidden" name="devis_id" value={d.id} />
+                            <input type="hidden" name="retour" value="/devis" />
+                            <button type="submit" className="ml-3 text-red-600 hover:underline font-medium">
+                              Supprimer
+                            </button>
+                          </form>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

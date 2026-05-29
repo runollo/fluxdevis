@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { serverPost, serverPatch, serverFetch } from "./api";
+import { serverPost, serverPatch, serverFetch, serverDelete } from "./api";
 
 export async function saveOffre(formData: FormData) {
   const id = formData.get("id") as string;
@@ -302,4 +302,78 @@ export async function genererFactureMaintenance(formData: FormData) {
     ok = false;
   }
   redirect(`/devis/detail?id=${id}${ok ? "" : "&maint_erreur=1"}`);
+}
+
+
+// Extrait le champ "detail" d'un message d'erreur API ("API 400: {\"detail\":\"...\"}")
+function extraireDetail(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  const i = msg.indexOf("{");
+  if (i >= 0) {
+    try {
+      const obj = JSON.parse(msg.slice(i));
+      if (obj?.detail) return String(obj.detail);
+    } catch {}
+  }
+  return "Operation impossible.";
+}
+
+function ajouterParam(url: string, cle: string, valeur: string): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}${cle}=${encodeURIComponent(valeur)}`;
+}
+
+
+export async function archiverDevis(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  const retour = (formData.get("retour") as string) || "/devis";
+  if (!id) redirect("/devis");
+  try {
+    await serverDelete(`/devis/${id}`);
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect("/devis");
+}
+
+
+export async function restaurerDevis(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  await serverPost(`/devis/${id}/restaurer`, {});
+  redirect("/devis?archives=1");
+}
+
+
+export async function archiverFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  try {
+    await serverDelete(`/factures/${id}`);
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(retour);
+}
+
+
+export async function annulerFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  try {
+    await serverPost(`/factures/${id}/annuler`, {});
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(retour);
+}
+
+
+export async function restaurerFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  if (!id) redirect("/factures");
+  await serverPost(`/factures/${id}/restaurer`, {});
+  redirect("/factures?archives=1");
 }

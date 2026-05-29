@@ -1,4 +1,5 @@
 import { serverFetch } from "@/lib/api";
+import { archiverFacture, annulerFacture, restaurerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -26,25 +27,81 @@ const TYPE_LABELS: Record<string, string> = {
   maintenance: "Maintenance",
 };
 
-export default async function FacturesPage() {
+// Boutons d'action selon le statut, conformes au droit :
+// - brouillon  -> suppression (corbeille) possible
+// - emise/payee/en_retard -> annulation par avoir uniquement
+// - annulee    -> aucune action (document conserve)
+function ActionsFacture({ f }: { f: Facture }) {
+  if (f.statut === "brouillon") {
+    return (
+      <form action={archiverFacture} className="inline">
+        <input type="hidden" name="facture_id" value={f.id} />
+        <input type="hidden" name="retour" value="/factures" />
+        <button type="submit" className="ml-3 text-red-600 hover:underline font-medium">Supprimer</button>
+      </form>
+    );
+  }
+  if (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") {
+    return (
+      <form action={annulerFacture} className="inline">
+        <input type="hidden" name="facture_id" value={f.id} />
+        <input type="hidden" name="retour" value="/factures" />
+        <button type="submit" className="ml-3 text-orange-600 hover:underline font-medium">Annuler (avoir)</button>
+      </form>
+    );
+  }
+  return null;
+}
+
+export default async function FacturesPage(
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string }> }
+) {
+  const params = await searchParams;
+  const corbeille = params.archives === "1";
+
   let factures: Facture[] = [];
-  try { factures = await serverFetch<Facture[]>("/factures/"); } catch {}
+  try {
+    factures = await serverFetch<Facture[]>(`/factures/${corbeille ? "?archives=true" : ""}`);
+  } catch {}
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Factures ({factures.length})</h1>
-        <Link href="/devis" className="px-4 py-2.5 bg-[#1A355E] text-white rounded text-sm font-medium text-center">
-          Generer depuis un devis
-        </Link>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+          {corbeille ? "Corbeille — factures" : "Factures"} ({factures.length})
+        </h1>
+        <div className="flex gap-2">
+          {corbeille ? (
+            <Link href="/factures" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+              Retour aux factures
+            </Link>
+          ) : (
+            <>
+              <Link href="/factures?archives=1" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+                Corbeille
+              </Link>
+              <Link href="/devis" className="px-4 py-2.5 bg-[#1A355E] text-white rounded text-sm font-medium text-center">
+                Generer depuis un devis
+              </Link>
+            </>
+          )}
+        </div>
       </div>
+
+      {params.suppr_msg && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
+          {params.suppr_msg}
+        </div>
+      )}
 
       {factures.length === 0 ? (
         <div className="bg-white border rounded-lg p-8 text-center">
-          <p className="text-gray-400 mb-4">Aucune facture</p>
-          <Link href="/devis" className="text-blue-600 hover:underline text-sm">
-            Generer des factures depuis un devis
-          </Link>
+          <p className="text-gray-400 mb-4">{corbeille ? "Corbeille vide" : "Aucune facture"}</p>
+          {!corbeille && (
+            <Link href="/devis" className="text-blue-600 hover:underline text-sm">
+              Generer des factures depuis un devis
+            </Link>
+          )}
         </div>
       ) : (
         <>
@@ -66,12 +123,38 @@ export default async function FacturesPage() {
                   <span className="text-gray-400">{f.date_emission}</span>
                   <span className="font-semibold">{eur(f.total_ttc)}</span>
                 </div>
-                <a
-                  href={`/api/factures/${f.id}/document`}
-                  className="mt-3 block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium"
-                >
-                  Telecharger (Word)
-                </a>
+                {corbeille ? (
+                  <form action={restaurerFacture} className="mt-3">
+                    <input type="hidden" name="facture_id" value={f.id} />
+                    <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                      Restaurer
+                    </button>
+                  </form>
+                ) : (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                      Telecharger (Word)
+                    </a>
+                    {f.statut === "brouillon" && (
+                      <form action={archiverFacture}>
+                        <input type="hidden" name="facture_id" value={f.id} />
+                        <input type="hidden" name="retour" value="/factures" />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+                          Supprimer (corbeille)
+                        </button>
+                      </form>
+                    )}
+                    {(f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
+                      <form action={annulerFacture}>
+                        <input type="hidden" name="facture_id" value={f.id} />
+                        <input type="hidden" name="retour" value="/factures" />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-orange-300 text-orange-600 rounded text-sm font-medium">
+                          Annuler (avoir)
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -86,7 +169,7 @@ export default async function FacturesPage() {
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium text-right">Total TTC</th>
                   <th className="px-4 py-3 font-medium">Statut</th>
-                  <th className="px-4 py-3 font-medium text-right">Document</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -102,10 +185,20 @@ export default async function FacturesPage() {
                         {f.statut}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline font-medium">
-                        Telecharger
-                      </a>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {corbeille ? (
+                        <form action={restaurerFacture} className="inline">
+                          <input type="hidden" name="facture_id" value={f.id} />
+                          <button type="submit" className="text-[#1A355E] hover:underline font-medium">Restaurer</button>
+                        </form>
+                      ) : (
+                        <>
+                          <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline font-medium">
+                            Telecharger
+                          </a>
+                          <ActionsFacture f={f} />
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}

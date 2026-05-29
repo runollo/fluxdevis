@@ -24,3 +24,17 @@ class TimestampMixin:
         server_default=func.now(),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class SoftDeleteMixin:
+    """Mixin pour l'archivage (corbeille) plutot que la suppression physique.
+
+    Conformite juridique : un document n'est jamais detruit en base, il est
+    seulement masque (archived_at renseigne). Permet la restauration et garde
+    une trace complete. La purge physique reelle reste reservee aux donnees de
+    test via le script scripts/purge_donnees.py.
+    """
+
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None, nullable=True
+    )

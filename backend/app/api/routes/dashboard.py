@@ -70,22 +70,28 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     offres_actives = await _count(db, Offre, Offre.actif.is_(True))
     options_actives = await _count(db, Option, Option.actif.is_(True))
     clients = await _count(db, Client, Client.actif.is_(True))
-    devis_total = await _count(db, Devis)
-    devis_acceptes = await _count(db, Devis, Devis.statut == StatutDevis.ACCEPTE)
-    factures_total = await _count(db, Facture)
+    # Les documents archives (corbeille) sont exclus de toutes les statistiques.
+    devis_total = await _count(db, Devis, Devis.archived_at.is_(None))
+    devis_acceptes = await _count(
+        db, Devis, Devis.archived_at.is_(None), Devis.statut == StatutDevis.ACCEPTE
+    )
+    factures_total = await _count(db, Facture, Facture.archived_at.is_(None))
     factures_impayees = await _count(
-        db, Facture, Facture.statut.in_([StatutFacture.EMISE, StatutFacture.EN_RETARD])
+        db, Facture, Facture.archived_at.is_(None),
+        Facture.statut.in_([StatutFacture.EMISE, StatutFacture.EN_RETARD]),
     )
 
-    montant_devis = await _somme(db, Devis.total_ttc)
-    montant_factures = await _somme(db, Facture.total_ttc)
+    montant_devis = await _somme(db, Devis.total_ttc, Devis.archived_at.is_(None))
+    montant_factures = await _somme(db, Facture.total_ttc, Facture.archived_at.is_(None))
 
     derniers_devis = (await db.execute(
-        select(Devis).order_by(Devis.date_emission.desc(), Devis.id.desc()).limit(5)
+        select(Devis).where(Devis.archived_at.is_(None))
+        .order_by(Devis.date_emission.desc(), Devis.id.desc()).limit(5)
     )).scalars().all()
 
     dernieres_factures = (await db.execute(
-        select(Facture).order_by(Facture.date_emission.desc(), Facture.id.desc()).limit(5)
+        select(Facture).where(Facture.archived_at.is_(None))
+        .order_by(Facture.date_emission.desc(), Facture.id.desc()).limit(5)
     )).scalars().all()
 
     return DashboardStats(

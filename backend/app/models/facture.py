@@ -6,7 +6,7 @@ from sqlalchemy import String, Numeric, Integer, Date, ForeignKey, Text, Enum as
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class TypeFacture(str, enum.Enum):
@@ -23,7 +23,7 @@ class StatutFacture(str, enum.Enum):
     ANNULEE = "annulee"
 
 
-class Facture(Base, TimestampMixin):
+class Facture(Base, TimestampMixin, SoftDeleteMixin):
     """Facture (acompte ou maintenance).
 
     Regroupe les donnees de build_factures_acompte.py

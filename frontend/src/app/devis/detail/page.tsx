@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, archiverDevis, archiverFacture, annulerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -69,7 +69,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string }> }) {
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
@@ -110,6 +110,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
         </div>
       )}
 
+      {params.suppr_msg && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {params.suppr_msg}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="bg-white border rounded-lg p-4 mb-4 flex flex-col sm:flex-row sm:items-end gap-4">
         <form action={changerStatut} className="flex items-end gap-2">
@@ -138,6 +144,13 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             </button>
           </form>
         )}
+        <form action={archiverDevis}>
+          <input type="hidden" name="devis_id" value={d.id} />
+          <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
+          <button type="submit" className="w-full px-4 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
+            Supprimer ce devis
+          </button>
+        </form>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -292,6 +305,20 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium">{eur(f.total_ttc)}</span>
                   <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline text-sm font-medium">Telecharger</a>
+                  {f.statut === "brouillon" && (
+                    <form action={archiverFacture} className="inline">
+                      <input type="hidden" name="facture_id" value={f.id} />
+                      <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
+                      <button type="submit" className="text-red-600 hover:underline text-sm font-medium">Supprimer</button>
+                    </form>
+                  )}
+                  {(f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
+                    <form action={annulerFacture} className="inline">
+                      <input type="hidden" name="facture_id" value={f.id} />
+                      <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
+                      <button type="submit" className="text-orange-600 hover:underline text-sm font-medium">Annuler</button>
+                    </form>
+                  )}
                 </div>
               </li>
             ))}

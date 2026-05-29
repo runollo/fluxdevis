@@ -14,7 +14,7 @@ from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
 from pydantic import BaseModel
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime, timezone
 
 router = APIRouter()
 
@@ -36,9 +36,18 @@ class FactureSummary(BaseModel):
 async def list_factures(
     statut: StatutFacture | None = None,
     type: TypeFacture | None = None,
+    archives: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
+    """Liste les factures. Par defaut, exclut les factures archivees (corbeille).
+
+    archives=true retourne uniquement les factures archivees.
+    """
     query = select(Facture).order_by(Facture.date_emission.desc())
+    if archives:
+        query = query.where(Facture.archived_at.is_not(None))
+    else:
+        query = query.where(Facture.archived_at.is_(None))
     if statut:
         query = query.where(Facture.statut == statut)
     if type:
@@ -145,3 +154,63 @@ async def next_numero(db: AsyncSession = Depends(get_db)):
     )
     count = result.scalar() or 0
     return {"numero": f"{prefix}{count + 1:03d}"}
+
+
+@router.delete("/{facture_id}", status_code=204)
+async def archiver_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Archive une facture (corbeille).
+
+    Garde-fou juridique : SEULE une facture en brouillon (jamais emise) peut
+    etre archivee. Une facture emise/payee/en retard ne se supprime pas — elle
+    doit etre annulee par un avoir (POST /{id}/annuler), ce qui preserve la
+    numerotation sequentielle imposee par l'administration fiscale.
+    """
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.archived_at is not None:
+        raise HTTPException(400, "Facture deja archivee")
+    if facture.statut != StatutFacture.BROUILLON:
+        raise HTTPException(
+            400,
+            "Une facture emise ne peut pas etre supprimee (numerotation legale). "
+            "Utilisez l'annulation (avoir) a la place.",
+        )
+    facture.archived_at = datetime.now(timezone.utc)
+    await db.commit()
+
+
+@router.post("/{facture_id}/annuler", response_model=FactureSummary)
+async def annuler_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Annule une facture emise (equivalent avoir) : statut ANNULEE.
+
+    La facture reste en base avec son numero — conformite : la numerotation
+    sequentielle ne doit jamais comporter de trou. Une facture deja annulee ou
+    deja en brouillon n'a pas a etre annulee.
+    """
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut == StatutFacture.ANNULEE:
+        raise HTTPException(400, "Facture deja annulee")
+    if facture.statut == StatutFacture.BROUILLON:
+        raise HTTPException(
+            400,
+            "Une facture en brouillon n'a pas a etre annulee : supprimez-la (corbeille).",
+        )
+    facture.statut = StatutFacture.ANNULEE
+    await db.commit()
+    await db.refresh(facture)
+    return facture
+
+
+@router.post("/{facture_id}/restaurer", response_model=FactureSummary)
+async def restaurer_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Restaure une facture archivee (la sort de la corbeille)."""
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    facture.archived_at = None
+    await db.commit()
+    await db.refresh(facture)
+    return facture

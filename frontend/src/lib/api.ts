@@ -33,6 +33,11 @@ export async function serverPatch<T>(path: string, body: Record<string, unknown>
   return res.json();
 }
 
+export async function serverDelete(path: string): Promise<void> {
+  const res = await fetch(`${BACKEND}${path}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+}
+
 export async function clientFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${CLIENT_API}${path}`, {
     headers: { "Content-Type": "application/json", ...opts?.headers },

@@ -9,7 +9,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
 
 class ModeReglement(str, enum.Enum):
@@ -32,7 +32,7 @@ class StatutDevis(str, enum.Enum):
     EXPIRE = "expire"
 
 
-class Devis(Base, TimestampMixin):
+class Devis(Base, TimestampMixin, SoftDeleteMixin):
     """Devis client — snapshot fige des prix au moment de l'emission.
 
     Regroupe les donnees de Simu_live + Devis_client + Devis_params.

@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 from app.core.database import get_db
 from app.models.devis import Devis, DevisOptionLigne, StatutDevis, ModeReglement, PlanPaiement
@@ -89,9 +89,18 @@ class DevisCreateRequest(BaseModel):
 @router.get("/", response_model=list[DevisSummary])
 async def list_devis(
     statut: StatutDevis | None = None,
+    archives: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
+    """Liste les devis. Par defaut, exclut les devis archives (corbeille).
+
+    archives=true retourne uniquement les devis archives.
+    """
     query = select(Devis).order_by(Devis.date_emission.desc())
+    if archives:
+        query = query.where(Devis.archived_at.is_not(None))
+    else:
+        query = query.where(Devis.archived_at.is_(None))
     if statut:
         query = query.where(Devis.statut == statut)
     result = await db.execute(query)
@@ -199,6 +208,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
                 "date_emission": f.date_emission.isoformat(),
             }
             for f in sorted(d.factures, key=lambda x: x.id)
+            if f.archived_at is None
         ],
     }
 
@@ -212,6 +222,60 @@ async def changer_statut_devis(
     if not devis:
         raise HTTPException(404, "Devis non trouve")
     devis.statut = data.statut
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
+@router.delete("/{devis_id}", status_code=204)
+async def archiver_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Archive un devis (corbeille) — aucune destruction physique.
+
+    Garde-fou juridique : refuse si une facture deja emise (ou au-dela) est
+    rattachee, car un devis facture est un document contractuel. Les eventuelles
+    factures encore en brouillon sont archivees en cascade.
+    """
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    if devis.archived_at is not None:
+        raise HTTPException(400, "Devis deja archive")
+
+    factures = (
+        await db.execute(
+            select(Facture).where(
+                Facture.devis_id == devis_id, Facture.archived_at.is_(None)
+            )
+        )
+    ).scalars().all()
+
+    # Seules les factures encore actives (emise/payee/en retard) bloquent : ce
+    # sont des documents engageants. Les brouillons et les factures annulees
+    # (avoirs deja neutralises) sont archivees en cascade avec le devis.
+    neutres = {StatutFacture.BROUILLON, StatutFacture.ANNULEE}
+    engageantes = [f for f in factures if f.statut not in neutres]
+    if engageantes:
+        numeros = ", ".join(f.numero for f in engageantes)
+        raise HTTPException(
+            400,
+            "Impossible d'archiver : des factures emises sont rattachees a ce devis "
+            f"({numeros}). Annulez-les d'abord (avoir).",
+        )
+
+    now = datetime.now(timezone.utc)
+    for f in factures:  # brouillons et annulees uniquement a ce stade
+        f.archived_at = now
+    devis.archived_at = now
+    await db.commit()
+
+
+@router.post("/{devis_id}/restaurer", response_model=DevisSummary)
+async def restaurer_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Restaure un devis archive (le sort de la corbeille)."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    devis.archived_at = None
     await db.commit()
     await db.refresh(devis)
     return devis
@@ -298,9 +362,12 @@ async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_d
     if not devis:
         raise HTTPException(404, "Devis non trouve")
 
-    # Idempotence : ne pas regenerer si des factures existent deja
+    # Idempotence : ne pas regenerer si des factures actives existent deja
+    # (les factures archivees ne comptent pas — permet de regenerer apres corbeille)
     existantes = await db.execute(
-        select(func.count()).select_from(Facture).where(Facture.devis_id == devis_id)
+        select(func.count()).select_from(Facture).where(
+            Facture.devis_id == devis_id, Facture.archived_at.is_(None)
+        )
     )
     if (existantes.scalar() or 0) > 0:
         raise HTTPException(400, "Des factures existent deja pour ce devis")

@@ -167,6 +167,7 @@ async def devis_maintenance_dus(db: AsyncSession, today: date | None = None) -> 
         select(Devis).where(
             Devis.date_mise_en_ligne.is_not(None),
             Devis.mode_reglement != ModeReglement.LEASING,
+            Devis.archived_at.is_(None),
         )
     )
     dus: list[dict] = []

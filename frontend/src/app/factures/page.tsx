@@ -96,6 +96,9 @@ export default async function FacturesPage(
             </Link>
           ) : (
             <>
+              <a href={`/api/factures/export.xlsx${q ? `?q=${encodeURIComponent(q)}` : ""}`} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+                Export Excel
+              </a>
               <Link href="/factures?archives=1" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
                 Corbeille
               </Link>

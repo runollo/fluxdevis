@@ -12,6 +12,7 @@ from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
+from app.services.export_excel import export_factures_xlsx
 from pydantic import BaseModel
 from decimal import Decimal
 from datetime import date, datetime, timezone
@@ -63,6 +64,24 @@ async def list_factures(
     query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/export.xlsx")
+async def export_factures(q: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Exporte les factures actives (non archivees) au format Excel, en respectant q."""
+    query = select(Facture).where(Facture.archived_at.is_(None)).order_by(
+        Facture.date_emission.desc(), Facture.id.desc()
+    )
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(Facture.numero.ilike(motif) | Facture.objet.ilike(motif))
+    factures = (await db.execute(query)).scalars().all()
+    buf = export_factures_xlsx(factures)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="factures.xlsx"'},
+    )
 
 
 @router.get("/maintenance/dus")

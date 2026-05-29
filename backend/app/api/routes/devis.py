@@ -18,6 +18,7 @@ from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, Sta
 from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis
 from app.services.generation_devis import generer_devis, repartition_echeances
+from app.services.export_excel import export_devis_xlsx
 from app.services.facturation_maintenance import (
     generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
 )
@@ -118,6 +119,28 @@ async def list_devis(
     query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.get("/export.xlsx")
+async def export_devis(q: str | None = None, db: AsyncSession = Depends(get_db)):
+    """Exporte les devis actifs (non archives) au format Excel, en respectant q."""
+    query = select(Devis).where(Devis.archived_at.is_(None)).order_by(
+        Devis.date_emission.desc(), Devis.id.desc()
+    )
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(
+            Devis.reference.ilike(motif)
+            | Devis.client_raison_sociale.ilike(motif)
+            | Devis.offre_nom.ilike(motif)
+        )
+    devis = (await db.execute(query)).scalars().all()
+    buf = export_devis_xlsx(devis)
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="devis.xlsx"'},
+    )
 
 
 @router.get("/{devis_id}", response_model=DevisSummary)

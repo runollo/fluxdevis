@@ -205,7 +205,7 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
   cliquables vers chaque section, listes "Derniers devis" et "Dernieres factures"
   avec badges de statut. Fallback si backend injoignable.
 
-### Phase D — Ameliorations UI (en cours)
+### Phase D — Ameliorations UI (terminee 2026-05-29)
 Fait (2026-05-29) :
 - Detail d'un devis : page `/devis/detail?id=X` (snapshot complet, options/prestations,
   articles offerts, totaux, factures liees avec telechargement). Endpoint
@@ -219,8 +219,11 @@ Fait (2026-05-29) :
   sur catalogue (offres + options) et clients. Frontend : barre de recherche
   (form method=GET) + pagination Precedent/Suivant (sans total, page suivante active
   si la page est pleine). `PAR_PAGE = 25`.
-Reste a faire :
-- Export Excel
+- Export Excel : service `app/services/export_excel.py` (openpyxl). Endpoints
+  `GET /api/devis/export.xlsx` et `GET /api/factures/export.xlsx` (respectent `q`,
+  excluent les archives). Boutons "Export Excel" sur /devis et /factures. Les routes
+  `export.xlsx` sont declarees AVANT `/{id}` pour ne pas etre capturees par le
+  convertisseur int.
 
 ### Suppression et corbeille (soft-delete) — cadre juridique
 Principe : aucune destruction physique via l'UI. Colonne `archived_at` (mixin

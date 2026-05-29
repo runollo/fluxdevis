@@ -197,9 +197,13 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
 - Frontend : nouvelle page `/factures` (liste + telechargement), bouton "Generer les factures"
   sur /devis (Server Action `genererFactures`), lien Factures dans la Sidebar.
 
-### Phase C — Dashboard dynamique
-- Vrais compteurs depuis la BDD (nb offres, clients, devis, factures)
-- Derniers devis, dernieres factures
+### Phase C — Dashboard dynamique (terminee 2026-05-29)
+- Endpoint `GET /api/dashboard/` : compteurs (offres/options/clients actifs,
+  devis total + acceptes, factures total + impayees), montants TTC cumules,
+  5 derniers devis et 5 dernieres factures
+- Dashboard (page.tsx) : Server Component qui consomme l'endpoint, cartes
+  cliquables vers chaque section, listes "Derniers devis" et "Dernieres factures"
+  avec badges de statut. Fallback si backend injoignable.
 
 ### Phase D — Ameliorations UI
 - Recherche/filtres catalogue

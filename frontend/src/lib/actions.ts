@@ -259,13 +259,24 @@ export async function saveDevis(formData: FormData) {
 
 export async function genererFactures(formData: FormData) {
   const devisId = formData.get("devis_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
   if (!devisId) redirect("/devis");
 
+  let ok = false;
   try {
     await serverPost(`/devis/${devisId}/factures`, {});
+    ok = true;
   } catch {
-    // Factures deja generees ou erreur : on redirige vers la liste des factures
-    redirect("/factures?erreur=1");
+    ok = false;
   }
-  redirect("/factures");
+  redirect(ok ? retour : `${retour}${retour.includes("?") ? "&" : "?"}erreur=1`);
+}
+
+
+export async function changerStatut(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  const statut = formData.get("statut") as string;
+  if (!id || !statut) redirect("/devis");
+  await serverPatch(`/devis/${id}/statut`, { statut });
+  redirect(`/devis/detail?id=${id}`);
 }

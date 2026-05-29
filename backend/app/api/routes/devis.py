@@ -96,6 +96,99 @@ async def get_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     return devis
 
 
+class StatutUpdate(BaseModel):
+    statut: StatutDevis
+
+
+@router.get("/{devis_id}/detail")
+async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Retourne le devis complet : snapshot, options, prestations, articles, factures liees."""
+    result = await db.execute(
+        select(Devis)
+        .where(Devis.id == devis_id)
+        .options(
+            selectinload(Devis.lignes),
+            selectinload(Devis.options),
+            selectinload(Devis.articles_offerts),
+            selectinload(Devis.factures),
+        )
+    )
+    d = result.scalar_one_or_none()
+    if not d:
+        raise HTTPException(404, "Devis non trouve")
+
+    return {
+        "id": d.id,
+        "reference": d.reference,
+        "statut": d.statut.value,
+        "date_emission": d.date_emission.isoformat(),
+        "date_validite": d.date_validite.isoformat(),
+        "client_raison_sociale": d.client_raison_sociale,
+        "client_adresse": d.client_adresse,
+        "client_cp": d.client_cp,
+        "client_ville": d.client_ville,
+        "client_interlocuteur": d.client_interlocuteur,
+        "client_telephone": d.client_telephone,
+        "client_siret": d.client_siret,
+        "offre_nom": d.offre_nom,
+        "offre_type_site": d.offre_type_site,
+        "mode_reglement": d.mode_reglement.value,
+        "plan_paiement": d.plan_paiement.value if d.plan_paiement else None,
+        "prix_vente_final": str(d.prix_vente_final),
+        "total_prestations_ht": str(d.total_prestations_ht),
+        "total_options_setup_ht": str(d.total_options_setup_ht),
+        "total_pack_maintenance_ht": str(d.total_pack_maintenance_ht),
+        "total_options_recurrent_ht": str(d.total_options_recurrent_ht),
+        "loyer_mensuel": str(d.loyer_mensuel) if d.loyer_mensuel is not None else None,
+        "duree_financement_mois": d.duree_financement_mois,
+        "commercial": d.commercial,
+        "total_ht": str(d.total_ht),
+        "total_tva": str(d.total_tva),
+        "total_ttc": str(d.total_ttc),
+        "options": [
+            {
+                "code": o.code, "nom": o.nom, "type_ligne": o.type_ligne,
+                "quantite": o.quantite, "prix_setup_ht": str(o.prix_setup_ht),
+                "prix_mensuel_ht": str(o.prix_mensuel_ht), "inclus": o.inclus,
+            }
+            for o in sorted(d.options, key=lambda x: x.ordre)
+        ],
+        "lignes": [
+            {
+                "designation": lg.designation, "quantite": lg.quantite,
+                "prix_unitaire_vente": str(lg.prix_unitaire_vente),
+            }
+            for lg in sorted(d.lignes, key=lambda x: x.ordre)
+        ],
+        "articles_offerts": [
+            {"designation": a.designation, "prix_vente": str(a.prix_vente)}
+            for a in sorted(d.articles_offerts, key=lambda x: x.ordre)
+        ],
+        "factures": [
+            {
+                "id": f.id, "numero": f.numero, "type": f.type.value,
+                "statut": f.statut.value, "total_ttc": str(f.total_ttc),
+                "date_emission": f.date_emission.isoformat(),
+            }
+            for f in sorted(d.factures, key=lambda x: x.id)
+        ],
+    }
+
+
+@router.patch("/{devis_id}/statut", response_model=DevisSummary)
+async def changer_statut_devis(
+    devis_id: int, data: StatutUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Change le statut d'un devis (brouillon, envoye, accepte, refuse, expire)."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    devis.statut = data.statut
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
 @router.get("/{devis_id}/document")
 async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     """Genere et retourne le devis au format Word (.docx)."""

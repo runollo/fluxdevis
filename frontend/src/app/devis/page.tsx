@@ -47,7 +47,7 @@ export default async function DevisPage() {
               <div key={d.id} className="bg-white border rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    <p className="font-mono text-sm font-medium">{d.reference}</p>
+                    <Link href={`/devis/detail?id=${d.id}`} className="font-mono text-sm font-medium text-[#1A355E] hover:underline">{d.reference}</Link>
                     <p className="text-sm text-gray-600">{d.client_raison_sociale}</p>
                   </div>
                   <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[d.statut] || "bg-gray-100 text-gray-700"}`}>
@@ -97,7 +97,9 @@ export default async function DevisPage() {
               <tbody className="divide-y">
                 {devisList.map(d => (
                   <tr key={d.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono font-medium">{d.reference}</td>
+                    <td className="px-4 py-3 font-mono font-medium">
+                      <Link href={`/devis/detail?id=${d.id}`} className="text-[#1A355E] hover:underline">{d.reference}</Link>
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{d.date_emission}</td>
                     <td className="px-4 py-3">{d.client_raison_sociale}</td>
                     <td className="px-4 py-3 text-gray-500">{d.offre_nom}</td>

@@ -205,11 +205,18 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
   cliquables vers chaque section, listes "Derniers devis" et "Dernieres factures"
   avec badges de statut. Fallback si backend injoignable.
 
-### Phase D — Ameliorations UI
+### Phase D — Ameliorations UI (en cours)
+Fait (2026-05-29) :
+- Detail d'un devis : page `/devis/detail?id=X` (snapshot complet, options/prestations,
+  articles offerts, totaux, factures liees avec telechargement). Endpoint
+  `GET /api/devis/{id}/detail`. Reference cliquable depuis la liste /devis.
+- Changement de statut devis (brouillon/envoye/accepte/refuse/expire) :
+  endpoint `PATCH /api/devis/{id}/statut`, formulaire select+bouton sur le detail
+  (Server Action `changerStatut`). Le bouton "Generer les factures" n'apparait que
+  si aucune facture n'existe encore.
+Reste a faire :
 - Recherche/filtres catalogue
 - Pagination
-- Detail d'un devis (page individuelle)
-- Changement de statut devis (brouillon → envoye → accepte)
 - Export Excel
 
 ### Phase E — Auth multi-utilisateur (differee)

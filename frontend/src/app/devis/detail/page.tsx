@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, archiverDevis, archiverFacture, annulerFacture } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, archiverDevis, archiverFacture, annulerFacture, envoyerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +70,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string }> }) {
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
@@ -114,6 +114,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
       {params.suppr_msg && (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {params.suppr_msg}
+        </div>
+      )}
+
+      {params.envoye === "1" && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          Facture envoyee par email au client.
         </div>
       )}
 
@@ -307,6 +313,11 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium">{eur(f.total_ttc)}</span>
                   <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline text-sm font-medium">Telecharger</a>
+                  <form action={envoyerFacture} className="inline">
+                    <input type="hidden" name="facture_id" value={f.id} />
+                    <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
+                    <button type="submit" className="text-[#1A355E] hover:underline text-sm font-medium">Envoyer</button>
+                  </form>
                   {f.statut === "brouillon" && (
                     <form action={archiverFacture} className="inline">
                       <input type="hidden" name="facture_id" value={f.id} />

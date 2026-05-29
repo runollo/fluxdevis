@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # TVA
     TVA_RATE: float = 0.20
 
+    # Envoi d'emails (Resend)
+    # RESEND_API_KEY : cle API Resend (re_...). Vide = envoi desactive.
+    # RESEND_FROM : expediteur, ex 'FluXweb <factures@mondomaine.fr>' (domaine
+    #   verifie cote Resend). Vide = fallback sur la societe en base.
+    RESEND_API_KEY: str = ""
+    RESEND_FROM: str = ""
+
     # Fichiers
     TEMPLATES_DIR: str = "app/templates"
     GENERATED_DIR: str = "generated"

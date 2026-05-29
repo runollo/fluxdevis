@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { archiverFacture, annulerFacture, restaurerFacture } from "@/lib/actions";
+import { archiverFacture, annulerFacture, restaurerFacture, envoyerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,7 @@ function ActionsFacture({ f }: { f: Facture }) {
 const PAR_PAGE = 25;
 
 export default async function FacturesPage(
-  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string }> }
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string; envoye?: string }> }
 ) {
   const params = await searchParams;
   const corbeille = params.archives === "1";
@@ -116,6 +116,12 @@ export default async function FacturesPage(
         </div>
       )}
 
+      {params.envoye === "1" && (
+        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
+          Facture envoyee par email au client.
+        </div>
+      )}
+
       {/* Recherche */}
       <form method="GET" className="mb-4 flex gap-2">
         {corbeille && <input type="hidden" name="archives" value="1" />}
@@ -169,6 +175,13 @@ export default async function FacturesPage(
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
                       Telecharger (Word)
                     </a>
+                    <form action={envoyerFacture}>
+                      <input type="hidden" name="facture_id" value={f.id} />
+                      <input type="hidden" name="retour" value="/factures" />
+                      <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                        Envoyer par email
+                      </button>
+                    </form>
                     {f.statut === "brouillon" && (
                       <form action={archiverFacture}>
                         <input type="hidden" name="facture_id" value={f.id} />
@@ -230,6 +243,11 @@ export default async function FacturesPage(
                           <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline font-medium">
                             Telecharger
                           </a>
+                          <form action={envoyerFacture} className="inline">
+                            <input type="hidden" name="facture_id" value={f.id} />
+                            <input type="hidden" name="retour" value="/factures" />
+                            <button type="submit" className="ml-3 text-[#1A355E] hover:underline font-medium">Envoyer</button>
+                          </form>
                           <ActionsFacture f={f} />
                         </>
                       )}

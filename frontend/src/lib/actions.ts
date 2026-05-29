@@ -377,3 +377,16 @@ export async function restaurerFacture(formData: FormData) {
   await serverPost(`/factures/${id}/restaurer`, {});
   redirect("/factures?archives=1");
 }
+
+
+export async function envoyerFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  try {
+    await serverPost(`/factures/${id}/envoyer`, {});
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(ajouterParam(retour, "envoye", "1"));
+}

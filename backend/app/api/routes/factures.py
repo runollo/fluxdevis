@@ -13,6 +13,8 @@ from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
 from app.services.export_excel import export_factures_xlsx
+from app.services.email_resend import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
 from datetime import date, datetime, timezone
@@ -102,9 +104,15 @@ async def get_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
     return facture
 
 
-@router.get("/{facture_id}/document")
-async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
-    """Genere et retourne la facture au format Word (.docx)."""
+_DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+async def _generer_facture_docx(facture_id: int, db: AsyncSession):
+    """Charge une facture et genere son document Word.
+
+    Retourne (facture, devis, societe, buffer_docx, nom_fichier). Mutualise entre
+    le telechargement et l'envoi par email.
+    """
     result = await db.execute(
         select(Facture)
         .where(Facture.id == facture_id)
@@ -165,11 +173,87 @@ async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db
 
     buf = generer_facture(data)
     filename = f"Facture_{facture.numero}.docx"
+    return facture, devis, societe, buf, filename
+
+
+@router.get("/{facture_id}/document")
+async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Genere et retourne la facture au format Word (.docx)."""
+    _, _, _, buf, filename = await _generer_facture_docx(facture_id, db)
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=_DOCX_CT,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _corps_email_facture(facture: Facture, devis, societe) -> tuple[str, str]:
+    """Construit (sujet, html) de l'email selon le type de facture."""
+    marque = (societe.marque or societe.nom) if societe else "FluXweb"
+    contact = (devis.client_interlocuteur if devis else None) or "Madame, Monsieur"
+    if facture.type == TypeFacture.MAINTENANCE:
+        sujet = f"Facture de maintenance {facture.numero} - {marque}"
+        periode = ""
+        if facture.periode_debut and facture.periode_fin:
+            periode = (
+                f"<p>Periode : du {facture.periode_debut.strftime('%d/%m/%Y')} "
+                f"au {facture.periode_fin.strftime('%d/%m/%Y')}.</p>"
+            )
+        intro = (
+            "<p>Veuillez trouver ci-joint votre facture de maintenance "
+            "(abonnement reconductible tacitement).</p>"
+        )
+        intro += periode
+    else:
+        sujet = f"Facture {facture.numero} - {marque}"
+        intro = "<p>Veuillez trouver ci-joint votre facture.</p>"
+
+    html = (
+        f"<p>Bonjour {contact},</p>"
+        f"{intro}"
+        f"<p>Montant : {facture.total_ttc} EUR TTC.</p>"
+        f"<p>Cordialement,<br>{marque}</p>"
+    )
+    return sujet, html
+
+
+@router.post("/{facture_id}/envoyer")
+async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Envoie la facture (Word en piece jointe) au client par email via Resend."""
+    if not email_actif():
+        raise HTTPException(
+            400, "Envoi email non configure : renseignez RESEND_API_KEY dans backend/.env."
+        )
+
+    facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
+
+    destinataire = devis.client_email if devis else None
+    if not destinataire:
+        raise HTTPException(
+            400,
+            "Email client absent du devis : renseignez l'email du client puis regenerez le devis.",
+        )
+
+    settings = get_settings()
+    expediteur = settings.RESEND_FROM
+    if not expediteur and societe and societe.email:
+        expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
+
+    sujet, html = _corps_email_facture(facture, devis, societe)
+    email = Email(
+        destinataire=destinataire,
+        sujet=sujet,
+        html=html,
+        pieces_jointes=[PieceJointe(filename, buf.getvalue(), _DOCX_CT)],
+        reply_to=(societe.email if societe else None),
+    )
+
+    try:
+        resultat = await envoyer_email(email, expediteur)
+    except EmailError as e:
+        raise HTTPException(400, str(e))
+
+    return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire}
 
 
 @router.get("/next-numero", response_model=dict)

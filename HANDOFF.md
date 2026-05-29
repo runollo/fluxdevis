@@ -276,9 +276,20 @@ pas selon le plan de paiement du setup. Mois glissant (anniversaire), sans prora
   (modele Devis + ALTER TABLE + backfill des devis existants depuis le client lie).
   Capturee a la creation du devis (`create_devis`), exposee dans `GET /api/devis/{id}/detail`
   (section Client du frontend) ET dans `GET /api/factures/maintenance/dus` (cle
-  `client_email`). Prerequis Resend desormais leve : l'automatisation dispose de
-  l'adresse pour envoyer la facture de maintenance. Reste a coder : l'integration
-  Resend elle-meme (template email + envoi du .docx ou d'un PDF).
+  `client_email`).
+- ENVOI EMAIL via RESEND (fait 2026-05-29) : service `app/services/email_resend.py`
+  (API HTTP Resend via httpx, piece jointe en base64, `EmailError`). Endpoint
+  `POST /api/factures/{id}/envoyer` : genere le Word de la facture et l'envoie au
+  `client_email` du devis (sujet/corps adaptes maintenance vs acompte). Generation
+  Word factorisee dans `_generer_facture_docx` (partagee avec le telechargement).
+  Frontend : bouton "Envoyer (par email)" sur /factures et /devis/detail (Server
+  Action `envoyerFacture`), bandeau succes `?envoye=1`, erreurs via `suppr_msg`.
+  Config : `RESEND_API_KEY` et `RESEND_FROM` dans `backend/.env` (settings
+  pydantic). From par defaut = `marque <email>` de la societe si `RESEND_FROM` vide.
+  A FAIRE cote Bruno : creer la cle API Resend, verifier un domaine d'envoi, remplir
+  `.env`. A CODER : le declencheur automatique (cron interne ou scenario Make qui
+  poll `/maintenance/dus`, cree la facture via POST `.../factures-maintenance`, puis
+  POST `.../{id}/envoyer`).
 
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant

@@ -307,17 +307,7 @@ def simuler(inp: SimulationInput) -> SimulationResult:
         r.maintenance_reversee = _q(r.loyer * inp.pct_maintenance_locam)
         r.loyer_client_ht = _q(r.loyer * (1 + inp.pct_maintenance_locam) + inp.garantie_web * factor)
 
-    # Plan paiement comptant : prelevements exacts au centime (ecart sur le 1er
-    # versement). Memes montants que l'echeancier du devis/facture.
-    if mode == "Comptant":
-        montants = repartir_au_centime(
-            r.prix_vente_final, _PLAN_FRACTIONS.get(inp.plan_paiement, [Fraction(1, 1)])
-        )
-        for i, montant in enumerate(montants, start=1):
-            setattr(r, f"prelevement_{i}", montant)
-        r.recurrent_mensuel = _q(r.total_pack_maintenance_vente + r.total_options_recurrent_vente)
-
-    # Totaux TTC
+    # Totaux TTC (calcules avant les prelevements pour servir de base TTC)
     tva = D("0.20")
     r.total_setup_ht = r.prix_setup_affiche
     r.total_setup_tva = _q(r.total_setup_ht * tva)
@@ -325,5 +315,15 @@ def simuler(inp: SimulationInput) -> SimulationResult:
     r.total_mensuel_ht = r.prix_mensuel_affiche
     r.total_mensuel_tva = _q(r.total_mensuel_ht * tva)
     r.total_mensuel_ttc = _q(r.total_mensuel_ht + r.total_mensuel_tva)
+
+    # Plan paiement comptant : prelevements exacts au centime sur le TOTAL SETUP
+    # TTC (meme base que l'echeancier du devis/facture), ecart sur le 1er versement.
+    if mode == "Comptant":
+        montants = repartir_au_centime(
+            r.total_setup_ttc, _PLAN_FRACTIONS.get(inp.plan_paiement, [Fraction(1, 1)])
+        )
+        for i, montant in enumerate(montants, start=1):
+            setattr(r, f"prelevement_{i}", montant)
+        r.recurrent_mensuel = _q(r.total_pack_maintenance_vente + r.total_options_recurrent_vente)
 
     return r

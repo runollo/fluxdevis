@@ -241,7 +241,7 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                 <Sec t="Remises"><R l="Remise setup" v={eur(result.remise_eur_setup)} /><R l="Remise recurrent" v={eur(result.remise_eur_recurrent)} /></Sec>
                 <Sec t="Marge"><R l="Marge" v={eur(result.marge)} /><R l="Marge totale" v={eur(result.marge_totale)} b /></Sec>
                 {mode === "Comptant" && N(result.prelevement_1) > 0 && (
-                  <Sec t="Plan de paiement">
+                  <Sec t="Plan de paiement (TTC)">
                     <R l="Prelevement 1" v={eur(result.prelevement_1)} />
                     {N(result.prelevement_2) > 0 && <R l="Prelevement 2" v={eur(result.prelevement_2)} />}
                     {N(result.prelevement_3) > 0 && <R l="Prelevement 3" v={eur(result.prelevement_3)} />}

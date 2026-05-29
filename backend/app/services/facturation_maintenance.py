@@ -56,8 +56,12 @@ def periode_pour_index(mise_en_ligne: date, index: int) -> tuple[date, date]:
 
 
 def montant_recurrent_ht(devis: Devis) -> Decimal:
-    """Montant HT mensuel du recurrent (pack maintenance + options recurrentes)."""
-    return _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    """Montant HT mensuel du recurrent (pack maintenance + options recurrentes),
+    net du recurrent offert (pack/options offerts en mensuel)."""
+    brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    offert = _q(devis.total_offerts_recurrent_ht or 0)
+    net = brut - offert
+    return net if net > 0 else Decimal("0")
 
 
 async def _nb_factures(db: AsyncSession, devis_id: int, type_facture=None) -> int:

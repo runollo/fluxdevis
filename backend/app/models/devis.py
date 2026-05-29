@@ -83,6 +83,8 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     total_options_setup_ht: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     total_pack_maintenance_ht: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     total_options_recurrent_ht: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
+    # Recurrent offert (deduit du mensuel facture : pack/options offerts en mensuel)
+    total_offerts_recurrent_ht: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
 
     # Remises
     remise_pct_setup: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)

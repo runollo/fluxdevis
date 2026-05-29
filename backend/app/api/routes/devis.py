@@ -10,7 +10,7 @@ from decimal import Decimal
 from datetime import date, timedelta, datetime, timezone
 
 from app.core.database import get_db
-from app.models.devis import Devis, DevisOptionLigne, StatutDevis, ModeReglement, PlanPaiement
+from app.models.devis import Devis, DevisOptionLigne, DevisArticleOffert, StatutDevis, ModeReglement, PlanPaiement
 from app.models.client import Client
 from app.models.offre import Offre
 from app.models.societe import Societe
@@ -65,6 +65,7 @@ class DevisCreateRequest(BaseModel):
     total_options_setup_ht: Decimal = Decimal("0")
     total_pack_maintenance_ht: Decimal = Decimal("0")
     total_options_recurrent_ht: Decimal = Decimal("0")
+    total_offerts_recurrent_ht: Decimal = Decimal("0")
     # Remises
     remise_pct_setup: Decimal = Decimal("0")
     remise_pct_recurrent: Decimal = Decimal("0")
@@ -84,6 +85,8 @@ class DevisCreateRequest(BaseModel):
     total_ttc: Decimal = Decimal("0")
     # Options selectionnees
     options: list[dict] = []
+    # Articles offerts (designation, prix_achat, prix_vente, est_setup)
+    articles_offerts: list[dict] = []
     # Textes
     commercial: str | None = None
 
@@ -564,6 +567,7 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
         total_options_setup_ht=data.total_options_setup_ht,
         total_pack_maintenance_ht=data.total_pack_maintenance_ht,
         total_options_recurrent_ht=data.total_options_recurrent_ht,
+        total_offerts_recurrent_ht=data.total_offerts_recurrent_ht,
         # Remises
         remise_pct_setup=data.remise_pct_setup,
         remise_pct_recurrent=data.remise_pct_recurrent,
@@ -601,6 +605,19 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
             inclus=opt_data.get("inclus", False),
         )
         db.add(opt_ligne)
+
+    # Sauvegarder les articles offerts (options/prestations offertes)
+    for idx, art_data in enumerate(data.articles_offerts):
+        designation = (art_data.get("designation") or "").strip()
+        if not designation:
+            continue
+        db.add(DevisArticleOffert(
+            devis_id=devis.id,
+            ordre=idx,
+            designation=designation,
+            prix_achat=Decimal(str(art_data.get("prix_achat", 0))),
+            prix_vente=Decimal(str(art_data.get("prix_vente", 0))),
+        ))
 
     await db.commit()
     await db.refresh(devis)

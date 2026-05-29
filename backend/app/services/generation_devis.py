@@ -89,7 +89,10 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_prestations(doc, devis)
     spacer(doc, 4)
 
-    mensuel_ht = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    mensuel_brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    mensuel_ht = mensuel_brut - _q(devis.total_offerts_recurrent_ht or 0)
+    if mensuel_ht < 0:
+        mensuel_ht = _q(0)
     if mensuel_ht > 0:
         _add_maintenance(doc, mensuel_ht)
         spacer(doc, 4)

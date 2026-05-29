@@ -140,6 +140,39 @@ export async function runSimulation(formData: FormData) {
     }
   }
 
+  // Articles offerts : options/prestations cochees "Offrir".
+  // est_setup = true pour le setup (one-shot), false pour le recurrent (mensuel, exceptionnel).
+  const articles_offerts: Array<Record<string, unknown>> = [];
+  for (const opt of optionsData) {
+    const qty = opt.type_ligne === "PACK"
+      ? (opt.id === packId ? 1 : 0)
+      : Number(formData.get(`opt_${opt.id}`) || "0");
+    const selectionnee = qty > 0 || opt.statut === "Inclus";
+    if (selectionnee && formData.get(`offrir_${opt.id}`) === "1") {
+      const est_setup = opt.type_ligne === "OPTION_SETUP";
+      articles_offerts.push({
+        designation: opt.nom,
+        prix_achat: String(Number(est_setup ? opt.setup_achat : opt.mensuel_achat) * (opt.statut === "Inclus" ? 1 : qty)),
+        prix_vente: String(Number(est_setup ? opt.vente_setup : opt.vente_mensuel) * (opt.statut === "Inclus" ? 1 : qty)),
+        est_setup,
+      });
+    }
+  }
+  for (let i = 1; i <= 3; i++) {
+    const designation = formData.get(`presta_${i}_nom`) as string;
+    const qty = Number(formData.get(`presta_${i}_qty`) || "0");
+    const pu_achat = Number(formData.get(`presta_${i}_achat`) || "0");
+    const pu_vente = Number(formData.get(`presta_${i}_vente`) || "0");
+    if (designation && qty > 0 && pu_vente > 0 && formData.get(`offrir_presta_${i}`) === "1") {
+      articles_offerts.push({
+        designation,
+        prix_achat: String(pu_achat * qty),
+        prix_vente: String(pu_vente * qty),
+        est_setup: true,  // prestation = toujours one-shot
+      });
+    }
+  }
+
   const body: Record<string, unknown> = {
     offre_nom: offre!.nom,
     offre_type_site: offre!.type_site,
@@ -152,6 +185,7 @@ export async function runSimulation(formData: FormData) {
     marge_additionnelle: formData.get("marge_add") || "0",
     selections,
     prestations,
+    articles_offerts,
   };
 
   // Leasing
@@ -178,14 +212,16 @@ export async function runSimulation(formData: FormData) {
   // Pack maintenance
   if (packId) params.set("pack_id", String(packId));
 
-  // Options selectionnees (quantites > 0)
+  // Options selectionnees (quantites > 0) + case "Offrir"
   for (const opt of optionsData) {
-    if (opt.type_ligne === "PACK") continue;
-    const qty = Number(formData.get(`opt_${opt.id}`) || "0");
-    if (qty > 0) params.set(`opt_${opt.id}`, String(qty));
+    if (opt.type_ligne !== "PACK") {
+      const qty = Number(formData.get(`opt_${opt.id}`) || "0");
+      if (qty > 0) params.set(`opt_${opt.id}`, String(qty));
+    }
+    if (formData.get(`offrir_${opt.id}`) === "1") params.set(`offrir_${opt.id}`, "1");
   }
 
-  // Prestations sur mesure
+  // Prestations sur mesure + case "Offrir"
   for (let i = 1; i <= 3; i++) {
     const nom = formData.get(`presta_${i}_nom`) as string;
     if (nom) {
@@ -194,6 +230,7 @@ export async function runSimulation(formData: FormData) {
       params.set(`presta_${i}_achat`, formData.get(`presta_${i}_achat`) as string || "0");
       params.set(`presta_${i}_vente`, formData.get(`presta_${i}_vente`) as string || "0");
     }
+    if (formData.get(`offrir_presta_${i}`) === "1") params.set(`offrir_presta_${i}`, "1");
   }
 
   // Leasing
@@ -222,6 +259,17 @@ export async function saveDevis(formData: FormData) {
   const optionsJson = formData.get("options_json") as string;
   const options = optionsJson ? JSON.parse(optionsJson) : [];
 
+  // Articles offerts (options/prestations offertes)
+  const articlesJson = formData.get("articles_offerts_json") as string;
+  const articles_offerts: Array<Record<string, unknown>> = articlesJson ? JSON.parse(articlesJson) : [];
+
+  // Garde-fou recurrent : offrir du recurrent (mensuel) est exceptionnel.
+  // La case "confirme_recurrent" est requise cote navigateur ; backstop serveur ici.
+  const offreRecurrent = articles_offerts.some((a) => a.est_setup === false);
+  if (offreRecurrent && formData.get("confirme_recurrent") !== "1") {
+    redirect("/simulateur");
+  }
+
   const data = {
     client_id: Number(client_id),
     offre_id: Number(offre_id),
@@ -232,6 +280,9 @@ export async function saveDevis(formData: FormData) {
     total_options_setup_ht: result.total_options_setup_vente || "0",
     total_pack_maintenance_ht: result.total_pack_maintenance_vente || "0",
     total_options_recurrent_ht: result.total_options_recurrent_vente || "0",
+    total_offerts_recurrent_ht: String(
+      articles_offerts.filter((a) => a.est_setup === false).reduce((s, a) => s + Number(a.prix_vente), 0)
+    ),
     remise_pct_setup: formData.get("remise_setup") || "0",
     remise_pct_recurrent: formData.get("remise_recurrent") || "0",
     remise_eur_setup: result.remise_eur_setup || "0",
@@ -249,6 +300,12 @@ export async function saveDevis(formData: FormData) {
       prix_setup_ht: o.prix_vente_setup || "0",
       prix_mensuel_ht: o.prix_vente_mensuel || "0",
       inclus: o.statut === "Inclus",
+    })),
+    articles_offerts: articles_offerts.map((a) => ({
+      designation: a.designation,
+      prix_achat: a.prix_achat || "0",
+      prix_vente: a.prix_vente || "0",
+      est_setup: a.est_setup !== false,
     })),
   };
 

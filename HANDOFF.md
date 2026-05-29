@@ -341,6 +341,54 @@ Checklist de reprise (quand Bruno aura tranche sa solution d'envoi) :
 7. Eventuellement : choisir PDF plutot que Word pour la piece jointe (format non
    modifiable cote client).
 
+### Articles offerts — saisie + garde-fou recurrent (terminee 2026-05-29)
+Le backend savait deja DEDUIRE et AFFICHER les articles offerts (modele
+`DevisArticleOffert`, moteur `simulation.py` avec flag `est_setup`, section "Articles
+offerts" du devis Word, detail). Il MANQUAIT toute la SAISIE : cette phase la pose.
+
+Principe de saisie (au lieu des 5 lignes figees + menu de 42 articles de l'ancien Excel) :
+une case **"Offrir"** apparait sur chaque element DEJA selectionne (option, pack,
+prestation). On n'offre donc que ce qui est dans le devis. Comme la page est en Server
+Component pur (etat dans l'URL), la case n'apparait qu'apres un premier Simuler :
+selectionner -> Simuler -> cocher "Offrir" -> Simuler -> Enregistrer.
+
+On peut tout offrir :
+- Setup (option OPTION_SETUP, one-shot) et prestations sur mesure -> `est_setup=true` (ambre).
+- Recurrent (PACK ou OPTION_RECURRENT, mensuel) -> `est_setup=false` (rouge), EXCEPTIONNEL.
+
+Garde-fou recurrent (3 niveaux, sans pop-up JS car pas de Client Component) :
+1. case "Offrir" du recurrent en rouge + libelle "(recur.)" ;
+2. banniere d'alerte rouge dans les resultats apres Simuler (liste + montant/mois deduit) ;
+3. a l'enregistrement, case "Je confirme offrir du RECURRENT" OBLIGATOIRE (`required` HTML,
+   bloque la soumission) + backstop serveur dans `saveDevis`.
+
+Coherence comptable du recurrent offert (point critique) : un pack offert en mensuel doit
+reduire la facturation de maintenance, pas seulement l'affichage. Nouveau champ scalaire
+**`devis.total_offerts_recurrent_ht`** (migration Alembic `2d30cbf3e4b7`, `server_default='0'`).
+Il est DEDUIT :
+- dans `facturation_maintenance.py:montant_recurrent_ht()` (factures de maintenance) ;
+- dans `generation_devis.py` (mensuel affiche sur le devis Word).
+Choix d'un champ scalaire (et non un flag sur `DevisArticleOffert`) car `devis_maintenance_dus`
+ne charge pas la relation `articles_offerts` -> on evite tout lazy-load en contexte async.
+Le setup offert, lui, est deja net dans les totaux stockes (via `prix_setup_affiche`).
+Verifie end-to-end : pack 100/mois dont 49 offert -> facture maintenance 51 HT / 61,20 TTC.
+
+Fichiers touches :
+- backend : `models/devis.py` (champ), `api/routes/devis.py` (`DevisCreateRequest.articles_offerts`
+  + `total_offerts_recurrent_ht`, persistance dans `create_devis`), `services/facturation_maintenance.py`,
+  `services/generation_devis.py`, `alembic/versions/2d30cbf3e4b7_*.py`.
+- frontend : `src/lib/actions.ts` (`runSimulation` construit `articles_offerts` + persiste les
+  cases dans l'URL ; `saveDevis` transmet `articles_offerts` + `total_offerts_recurrent_ht` +
+  garde-fou), `src/app/simulateur/page.tsx` (cases "Offrir", banniere, recap, case de confirmation).
+
+Note de presentation : une option offerte apparait a la fois comme ligne d'option (a son prix)
+ET dans "Articles offerts" avec mention "Offert" -> volontaire (montrer la valeur puis le geste).
+Le total reste net du cadeau.
+
+NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
+(`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
+(`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant
 - A implementer si besoin plus tard (admin, commercial, apporteur)

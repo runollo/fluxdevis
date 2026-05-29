@@ -50,6 +50,46 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
   const cats = new Map<string, OptS[]>();
   for (const o of others) { if (!cats.has(o.categorie)) cats.set(o.categorie, []); cats.get(o.categorie)!.push(o); }
 
+  // Articles offerts : reconstruits depuis l'etat URL (options/prestations cochees "Offrir").
+  // est_setup = false => recurrent (mensuel), exceptionnel => garde-fou.
+  const articlesOfferts: Array<{ designation: string; prix_achat: string; prix_vente: string; est_setup: boolean }> = [];
+  for (const o of others) {
+    const qty = o.statut === "Inclus" ? 1 : Number(p[`opt_${o.id}`] || "0");
+    if (qty > 0 && p[`offrir_${o.id}`] === "1") {
+      const est_setup = o.type_ligne === "OPTION_SETUP";
+      articlesOfferts.push({
+        designation: o.nom,
+        prix_achat: String(Number(est_setup ? o.setup_achat : o.mensuel_achat) * qty),
+        prix_vente: String(Number(est_setup ? o.vente_setup : o.vente_mensuel) * qty),
+        est_setup,
+      });
+    }
+  }
+  for (const pk of packs) {
+    if (p.pack_id === String(pk.id) && p[`offrir_${pk.id}`] === "1") {
+      articlesOfferts.push({
+        designation: pk.nom,
+        prix_achat: String(Number(pk.mensuel_achat)),
+        prix_vente: String(Number(pk.vente_mensuel)),
+        est_setup: false,
+      });
+    }
+  }
+  for (let i = 1; i <= 3; i++) {
+    const nom = p[`presta_${i}_nom`];
+    const qty = Number(p[`presta_${i}_qty`] || "0");
+    const pv = Number(p[`presta_${i}_vente`] || "0");
+    if (nom && qty > 0 && pv > 0 && p[`offrir_presta_${i}`] === "1") {
+      articlesOfferts.push({
+        designation: nom,
+        prix_achat: String(Number(p[`presta_${i}_achat`] || "0") * qty),
+        prix_vente: String(pv * qty),
+        est_setup: true,
+      });
+    }
+  }
+  const offertsRecurrent = articlesOfferts.filter(a => !a.est_setup);
+
   if (error && !offres.length) return <p className="text-red-600 p-4">Erreur : {error}</p>;
 
   // Si pas d'offre selectionnee : formulaire de selection
@@ -140,15 +180,26 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
           {/* Prestations sur mesure */}
           <div className="bg-white border rounded-lg p-4 space-y-3">
             <h2 className="text-sm font-semibold text-gray-500 uppercase">Prestations sur mesure</h2>
-            {[1, 2, 3].map(i => (
-              <div key={i} className="grid grid-cols-4 gap-2">
-                <div className="col-span-4 sm:col-span-1">
-                  <input name={`presta_${i}_nom`} placeholder={`Prestation ${i}`} defaultValue={p[`presta_${i}_nom`] || ""} className="w-full border rounded px-3 py-2 text-sm" /></div>
-                <input name={`presta_${i}_qty`} type="number" inputMode="numeric" placeholder="Qte" min={0} defaultValue={p[`presta_${i}_qty`] || "0"} className="w-full border rounded px-3 py-2 text-sm" />
-                <input name={`presta_${i}_achat`} type="number" inputMode="decimal" step="0.01" placeholder="PU achat" defaultValue={p[`presta_${i}_achat`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
-                <input name={`presta_${i}_vente`} type="number" inputMode="decimal" step="0.01" placeholder="PU vente" defaultValue={p[`presta_${i}_vente`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
-              </div>
-            ))}
+            {[1, 2, 3].map(i => {
+              const presObert = p[`offrir_presta_${i}`] === "1";
+              const presRempli = !!p[`presta_${i}_nom`];
+              return (
+              <div key={i} className="space-y-1">
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="col-span-4 sm:col-span-1">
+                    <input name={`presta_${i}_nom`} placeholder={`Prestation ${i}`} defaultValue={p[`presta_${i}_nom`] || ""} className="w-full border rounded px-3 py-2 text-sm" /></div>
+                  <input name={`presta_${i}_qty`} type="number" inputMode="numeric" placeholder="Qte" min={0} defaultValue={p[`presta_${i}_qty`] || "0"} className="w-full border rounded px-3 py-2 text-sm" />
+                  <input name={`presta_${i}_achat`} type="number" inputMode="decimal" step="0.01" placeholder="PU achat" defaultValue={p[`presta_${i}_achat`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
+                  <input name={`presta_${i}_vente`} type="number" inputMode="decimal" step="0.01" placeholder="PU vente" defaultValue={p[`presta_${i}_vente`] || ""} className="w-full border rounded px-3 py-2 text-sm" />
+                </div>
+                {presRempli && (
+                  <label className="flex items-center gap-1 text-xs text-amber-600 cursor-pointer" title="Offrir cette prestation (one-shot)">
+                    <input type="checkbox" name={`offrir_presta_${i}`} value="1" defaultChecked={presObert} className="accent-amber-500" />
+                    Offrir cette prestation
+                  </label>
+                )}
+              </div>);
+            })}
           </div>
 
           {/* Pack maintenance */}
@@ -161,15 +212,26 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                   <span className="text-sm text-gray-500">Aucun pack</span></label>
                 {packs.map(pk => {
                   const sel = p.pack_id === String(pk.id);
+                  const offert = p[`offrir_${pk.id}`] === "1";
                   return (
-                    <label key={pk.id} className={`flex items-center justify-between gap-3 p-2 rounded cursor-pointer ${sel ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50"}`}>
-                      <div className="flex items-center gap-3">
+                    <div key={pk.id} className={`flex items-center justify-between gap-3 p-2 rounded ${sel ? "bg-blue-50 border border-blue-200" : "hover:bg-gray-50"}`}>
+                      <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                         <input type="radio" name="pack_id" value={pk.id} defaultChecked={sel} className="accent-[#1A355E]" />
                         <div><span className={`text-sm font-medium ${sel ? "text-blue-900" : ""}`}>{pk.nom}</span>
+                          {offert && <span className="ml-2 text-xs text-red-600 font-medium">Offert</span>}
                           {pk.commentaire && <p className="text-xs text-gray-400">{pk.commentaire}</p>}</div>
+                      </label>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {sel && (
+                          <label className="flex items-center gap-1 text-xs text-red-600 cursor-pointer"
+                            title="Offrir le pack en RECURRENT (mensuel) — exceptionnel">
+                            <input type="checkbox" name={`offrir_${pk.id}`} value="1" defaultChecked={offert} className="accent-red-600" />
+                            Offrir (recur.)
+                          </label>
+                        )}
+                        <span className="text-sm font-medium">{eur(pk.vente_mensuel)}/mois</span>
                       </div>
-                      <span className="text-sm font-medium shrink-0">{eur(pk.vente_mensuel)}/mois</span>
-                    </label>);
+                    </div>);
                 })}
               </div>
             </div>
@@ -187,6 +249,8 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                       const incl = o.statut === "Inclus";
                       const savedQty = p[`opt_${o.id}`] || "0";
                       const sel = Number(savedQty) > 0;
+                      const recurrent = o.type_ligne !== "OPTION_SETUP";
+                      const offert = p[`offrir_${o.id}`] === "1";
                       const prix = o.type_ligne === "OPTION_SETUP" ? o.vente_setup : o.vente_mensuel;
                       const u = o.type_ligne === "OPTION_SETUP" ? "" : "/mois";
                       const bg = incl ? "bg-green-50" : sel ? "bg-blue-50 border border-blue-200" : "";
@@ -195,8 +259,18 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                           <div className="flex-1 min-w-0">
                             <span className={incl ? "text-green-800" : sel ? "text-blue-900 font-medium" : ""}>{o.nom}</span>
                             {incl && <span className="ml-2 text-xs text-green-600 font-medium">Inclus</span>}
+                            {offert && <span className={`ml-2 text-xs font-medium ${recurrent ? "text-red-600" : "text-amber-600"}`}>Offert</span>}
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
+                            {/* Case "Offrir" : visible une fois l'option selectionnee (apres un Simuler) */}
+                            {sel && !incl && (
+                              <label className={`flex items-center gap-1 text-xs cursor-pointer ${recurrent ? "text-red-600" : "text-gray-500"}`}
+                                title={recurrent ? "Offrir en RECURRENT (mensuel) — exceptionnel" : "Offrir (one-shot)"}>
+                                <input type="checkbox" name={`offrir_${o.id}`} value="1" defaultChecked={offert}
+                                  className={recurrent ? "accent-red-600" : "accent-amber-500"} />
+                                Offrir{recurrent ? " (recur.)" : ""}
+                              </label>
+                            )}
                             <span className="text-xs text-gray-400">{N(prix) > 0 ? `${eur(prix)}${u}` : ""}</span>
                             {incl ? (
                               <input type="hidden" name={`opt_${o.id}`} value="1" />
@@ -254,6 +328,19 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                     <R l="Loyer" v={eur(result.loyer)} />
                     <R l="Loyer client HT" v={eur(result.loyer_client_ht)} b />
                   </Sec>)}
+                {articlesOfferts.length > 0 && (
+                  <Sec t="Articles offerts">
+                    {articlesOfferts.map((a, i) => (
+                      <R key={i} l={`${a.designation}${a.est_setup ? "" : " (recur.)"}`} v={`- ${eur(a.prix_vente)}${a.est_setup ? "" : "/mois"}`} />
+                    ))}
+                  </Sec>)}
+                {offertsRecurrent.length > 0 && (
+                  <div className="border-2 border-red-300 bg-red-50 rounded-lg p-3">
+                    <p className="text-sm font-semibold text-red-700">Attention : vous offrez du RECURRENT (mensuel)</p>
+                    <p className="text-xs text-red-600 mt-1">
+                      {offertsRecurrent.map(a => a.designation).join(", ")} — soit {eur(offertsRecurrent.reduce((s, a) => s + Number(a.prix_vente), 0))}/mois deduits du revenu recurrent. C&apos;est exceptionnel : verifiez que c&apos;est intentionnel.
+                    </p>
+                  </div>)}
               </div>
             )}
           </div>
@@ -279,6 +366,7 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                       prix_vente_setup: o.vente_setup, prix_vente_mensuel: o.vente_mensuel,
                     }))
                 )} />
+                <input type="hidden" name="articles_offerts_json" value={JSON.stringify(articlesOfferts)} />
                 <div className="mb-3">
                   <label className="block text-sm font-medium mb-1">Client</label>
                   <select name="client_id" required className="w-full border rounded px-3 py-2.5 text-sm">
@@ -288,6 +376,12 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                     ))}
                   </select>
                 </div>
+                {offertsRecurrent.length > 0 && (
+                  <label className="flex items-start gap-2 mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded p-2 cursor-pointer">
+                    <input type="checkbox" name="confirme_recurrent" value="1" required className="mt-0.5 accent-red-600" />
+                    <span>Je confirme offrir du RECURRENT (mensuel) : {offertsRecurrent.map(a => a.designation).join(", ")}.</span>
+                  </label>
+                )}
                 <button type="submit" className="w-full py-3 bg-green-700 text-white rounded-lg font-medium text-sm">
                   Enregistrer le devis
                 </button>

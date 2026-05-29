@@ -201,6 +201,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         "client_ville": d.client_ville,
         "client_interlocuteur": d.client_interlocuteur,
         "client_telephone": d.client_telephone,
+        "client_email": d.client_email,
         "client_siret": d.client_siret,
         "offre_nom": d.offre_nom,
         "offre_type_site": d.offre_type_site,
@@ -501,6 +502,7 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
         client_ville=client.ville,
         client_interlocuteur=client.interlocuteur,
         client_telephone=client.telephone,
+        client_email=client.email,
         client_siret=client.siret,
         # Snapshot offre
         offre_id=offre.id,

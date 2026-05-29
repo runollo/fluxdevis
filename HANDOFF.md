@@ -271,8 +271,14 @@ pas selon le plan de paiement du setup. Mois glissant (anniversaire), sans prora
   `definirMiseEnLigne` et `genererFactureMaintenance`. Type affiche sur les factures.
 - AUTOMATISATION FUTURE (prevue mais non codee) : `GET /api/factures/maintenance/dus`
   expose les maintenances dues. Un scenario Make (HTTP) ou un cron interne peut le poller
-  puis appeler POST .../factures-maintenance. Pour un envoi email (Resend), il faudra
-  ajouter l'email client au snapshot devis (actuellement absent).
+  puis appeler POST .../factures-maintenance.
+- EMAIL CLIENT DANS LE SNAPSHOT (fait 2026-05-29) : colonne `devis.client_email`
+  (modele Devis + ALTER TABLE + backfill des devis existants depuis le client lie).
+  Capturee a la creation du devis (`create_devis`), exposee dans `GET /api/devis/{id}/detail`
+  (section Client du frontend) ET dans `GET /api/factures/maintenance/dus` (cle
+  `client_email`). Prerequis Resend desormais leve : l'automatisation dispose de
+  l'adresse pour envoyer la facture de maintenance. Reste a coder : l'integration
+  Resend elle-meme (template email + envoi du .docx ou d'un PDF).
 
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant

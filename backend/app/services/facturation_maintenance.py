@@ -179,6 +179,7 @@ async def devis_maintenance_dus(db: AsyncSession, today: date | None = None) -> 
             "devis_id": devis.id,
             "reference": devis.reference,
             "client_raison_sociale": devis.client_raison_sociale,
+            "client_email": devis.client_email,
             "periode_debut": periode["debut"].isoformat(),
             "periode_fin": periode["fin"].isoformat(),
             "montant_ttc": str(periode["montant_ttc"]),

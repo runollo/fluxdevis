@@ -63,6 +63,7 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     client_ville: Mapped[str | None] = mapped_column(String(100))
     client_interlocuteur: Mapped[str | None] = mapped_column(String(200))
     client_telephone: Mapped[str | None] = mapped_column(String(30))
+    client_email: Mapped[str | None] = mapped_column(String(200))
     client_siret: Mapped[str | None] = mapped_column(String(20))
 
     # Offre (FK + snapshot)

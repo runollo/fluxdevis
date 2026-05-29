@@ -27,7 +27,8 @@ interface DevisDetail {
   maintenance: Maintenance;
   client_raison_sociale: string; client_adresse: string | null;
   client_cp: string | null; client_ville: string | null;
-  client_interlocuteur: string | null; client_telephone: string | null; client_siret: string | null;
+  client_interlocuteur: string | null; client_telephone: string | null;
+  client_email: string | null; client_siret: string | null;
   offre_nom: string; offre_type_site: string;
   mode_reglement: string; plan_paiement: string | null;
   prix_vente_final: string; total_prestations_ht: string;
@@ -162,6 +163,7 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             <Info label="Interlocuteur" value={d.client_interlocuteur} />
             <Info label="Adresse" value={[d.client_adresse, [d.client_cp, d.client_ville].filter(Boolean).join(" ")].filter(Boolean).join(", ")} />
             <Info label="Telephone" value={d.client_telephone} />
+            <Info label="Email" value={d.client_email} />
             <Info label="SIRET" value={d.client_siret} />
           </div>
         </div>

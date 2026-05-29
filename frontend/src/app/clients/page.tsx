@@ -3,12 +3,16 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage() {
+export default async function ClientsPage(
+  { searchParams }: { searchParams: Promise<{ q?: string }> }
+) {
+  const params = await searchParams;
+  const q = (params.q || "").trim();
   let clients: Client[] = [];
   let error = "";
 
   try {
-    clients = await serverFetch<Client[]>("/clients/");
+    clients = await serverFetch<Client[]>(`/clients/${q ? `?q=${encodeURIComponent(q)}` : ""}`);
   } catch (e) {
     error = String(e);
   }
@@ -24,6 +28,17 @@ export default async function ClientsPage() {
           + Nouveau client
         </Link>
       </div>
+
+      {/* Recherche */}
+      <form method="GET" className="mb-4 flex gap-2">
+        <input
+          type="search" name="q" defaultValue={q}
+          placeholder="Rechercher (raison sociale, ville, email, interlocuteur)..."
+          className="flex-1 border rounded px-3 py-2 text-sm"
+        />
+        <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Rechercher</button>
+        {q && <Link href="/clients" className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">Effacer</Link>}
+      </form>
 
       {/* Mobile : cards */}
       <div className="sm:hidden space-y-3">

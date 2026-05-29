@@ -5,9 +5,11 @@ export const dynamic = "force-dynamic";
 
 function eur(v: number) { return Number(v).toLocaleString("fr-FR") + " \u20ac"; }
 
-export default async function CataloguePage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function CataloguePage({ searchParams }: { searchParams: Promise<{ tab?: string; q?: string }> }) {
   const params = await searchParams;
   const tab = params.tab === "options" ? "options" : "offres";
+  const q = (params.q || "").trim();
+  const qParam = q ? `?q=${encodeURIComponent(q)}` : "";
 
   let offres: Offre[] = [];
   let options: Option[] = [];
@@ -15,9 +17,9 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
 
   try {
     if (tab === "offres") {
-      offres = await serverFetch<Offre[]>("/offres/");
+      offres = await serverFetch<Offre[]>(`/offres/${qParam}`);
     } else {
-      options = await serverFetch<Option[]>("/options/");
+      options = await serverFetch<Option[]>(`/options/${qParam}`);
     }
   } catch (e) {
     error = String(e);
@@ -44,6 +46,18 @@ export default async function CataloguePage({ searchParams }: { searchParams: Pr
           Options
         </Link>
       </div>
+
+      {/* Recherche (sur l'onglet courant) */}
+      <form method="GET" className="mb-4 flex gap-2">
+        {tab === "options" && <input type="hidden" name="tab" value="options" />}
+        <input
+          type="search" name="q" defaultValue={q}
+          placeholder={tab === "offres" ? "Rechercher une offre..." : "Rechercher une option (nom, code, categorie)..."}
+          className="flex-1 border rounded px-3 py-2 text-sm"
+        />
+        <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Rechercher</button>
+        {q && <Link href={tab === "options" ? "/catalogue?tab=options" : "/catalogue"} className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">Effacer</Link>}
+      </form>
 
       {tab === "offres" ? (
         <>

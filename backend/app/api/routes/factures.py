@@ -37,13 +37,18 @@ async def list_factures(
     statut: StatutFacture | None = None,
     type: TypeFacture | None = None,
     archives: bool = False,
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 25,
     db: AsyncSession = Depends(get_db),
 ):
     """Liste les factures. Par defaut, exclut les factures archivees (corbeille).
 
-    archives=true retourne uniquement les factures archivees.
+    - archives=true : retourne uniquement les factures archivees.
+    - q : recherche sur le numero ou l'objet (insensible a la casse).
+    - skip / limit : pagination par decalage.
     """
-    query = select(Facture).order_by(Facture.date_emission.desc())
+    query = select(Facture).order_by(Facture.date_emission.desc(), Facture.id.desc())
     if archives:
         query = query.where(Facture.archived_at.is_not(None))
     else:
@@ -52,6 +57,10 @@ async def list_factures(
         query = query.where(Facture.statut == statut)
     if type:
         query = query.where(Facture.type == type)
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(Facture.numero.ilike(motif) | Facture.objet.ilike(motif))
+    query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
     result = await db.execute(query)
     return result.scalars().all()
 

@@ -215,9 +215,11 @@ Fait (2026-05-29) :
   (Server Action `changerStatut`). Le bouton "Generer les factures" n'apparait que
   si aucune facture n'existe encore.
 - SUPPRESSION / CORBEILLE conforme au droit (voir section dediee ci-dessous).
+- Recherche `q` + pagination (skip/limit) sur /devis et /factures ; recherche `q`
+  sur catalogue (offres + options) et clients. Frontend : barre de recherche
+  (form method=GET) + pagination Precedent/Suivant (sans total, page suivante active
+  si la page est pleine). `PAR_PAGE = 25`.
 Reste a faire :
-- Recherche/filtres catalogue
-- Pagination
 - Export Excel
 
 ### Suppression et corbeille (soft-delete) — cadre juridique

@@ -93,7 +93,13 @@ async def list_clients(
 ):
     query = select(Client).where(Client.actif).order_by(Client.raison_sociale)
     if q:
-        query = query.where(Client.raison_sociale.ilike(f"%{q}%"))
+        motif = f"%{q.strip()}%"
+        query = query.where(
+            Client.raison_sociale.ilike(motif)
+            | Client.ville.ilike(motif)
+            | Client.email.ilike(motif)
+            | Client.interlocuteur.ilike(motif)
+        )
     result = await db.execute(query)
     return result.scalars().all()
 

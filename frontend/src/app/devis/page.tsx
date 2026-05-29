@@ -21,16 +21,36 @@ const STATUT_COLORS: Record<string, string> = {
   expire: "bg-orange-100 text-orange-700",
 };
 
+const PAR_PAGE = 25;
+
 export default async function DevisPage(
-  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string }> }
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string }> }
 ) {
   const params = await searchParams;
   const corbeille = params.archives === "1";
+  const q = (params.q || "").trim();
+  const skip = Math.max(Number(params.skip) || 0, 0);
+
+  const qs = new URLSearchParams();
+  if (corbeille) qs.set("archives", "true");
+  if (q) qs.set("q", q);
+  qs.set("skip", String(skip));
+  qs.set("limit", String(PAR_PAGE));
 
   let devisList: Devis[] = [];
   try {
-    devisList = await serverFetch<Devis[]>(`/devis/${corbeille ? "?archives=true" : ""}`);
+    devisList = await serverFetch<Devis[]>(`/devis/?${qs.toString()}`);
   } catch {}
+
+  // Conserve archives/q dans les liens de pagination
+  const lienPage = (nouveauSkip: number) => {
+    const p = new URLSearchParams();
+    if (corbeille) p.set("archives", "1");
+    if (q) p.set("q", q);
+    if (nouveauSkip > 0) p.set("skip", String(nouveauSkip));
+    const s = p.toString();
+    return `/devis${s ? `?${s}` : ""}`;
+  };
 
   return (
     <div>
@@ -61,6 +81,18 @@ export default async function DevisPage(
           {params.suppr_msg}
         </div>
       )}
+
+      {/* Recherche */}
+      <form method="GET" className="mb-4 flex gap-2">
+        {corbeille && <input type="hidden" name="archives" value="1" />}
+        <input
+          type="search" name="q" defaultValue={q}
+          placeholder="Rechercher (reference, client, offre)..."
+          className="flex-1 border rounded px-3 py-2 text-sm"
+        />
+        <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Rechercher</button>
+        {q && <Link href={lienPage(0)} className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">Effacer</Link>}
+      </form>
 
       {devisList.length === 0 ? (
         <div className="bg-white border rounded-lg p-8 text-center">
@@ -187,6 +219,19 @@ export default async function DevisPage(
             </table>
           </div>
         </>
+      )}
+
+      {/* Pagination */}
+      {(skip > 0 || devisList.length === PAR_PAGE) && (
+        <div className="mt-4 flex items-center justify-between text-sm">
+          {skip > 0 ? (
+            <Link href={lienPage(Math.max(skip - PAR_PAGE, 0))} className="px-4 py-2 border border-gray-300 rounded font-medium">&larr; Precedent</Link>
+          ) : <span />}
+          <span className="text-gray-400">Page {Math.floor(skip / PAR_PAGE) + 1}</span>
+          {devisList.length === PAR_PAGE ? (
+            <Link href={lienPage(skip + PAR_PAGE)} className="px-4 py-2 border border-gray-300 rounded font-medium">Suivant &rarr;</Link>
+          ) : <span />}
+        </div>
       )}
     </div>
   );

@@ -58,8 +58,12 @@ class OffreUpdate(BaseModel):
 
 
 @router.get("/", response_model=list[OffreRead])
-async def list_offres(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Offre).where(Offre.actif).order_by(Offre.ordre))
+async def list_offres(q: str | None = None, db: AsyncSession = Depends(get_db)):
+    query = select(Offre).where(Offre.actif).order_by(Offre.ordre)
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(Offre.nom.ilike(motif) | Offre.type_site.ilike(motif))
+    result = await db.execute(query)
     return result.scalars().all()
 
 

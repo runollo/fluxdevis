@@ -90,19 +90,32 @@ class DevisCreateRequest(BaseModel):
 async def list_devis(
     statut: StatutDevis | None = None,
     archives: bool = False,
+    q: str | None = None,
+    skip: int = 0,
+    limit: int = 25,
     db: AsyncSession = Depends(get_db),
 ):
     """Liste les devis. Par defaut, exclut les devis archives (corbeille).
 
-    archives=true retourne uniquement les devis archives.
+    - archives=true : retourne uniquement les devis archives.
+    - q : recherche sur la reference, le client ou l'offre (insensible a la casse).
+    - skip / limit : pagination par decalage.
     """
-    query = select(Devis).order_by(Devis.date_emission.desc())
+    query = select(Devis).order_by(Devis.date_emission.desc(), Devis.id.desc())
     if archives:
         query = query.where(Devis.archived_at.is_not(None))
     else:
         query = query.where(Devis.archived_at.is_(None))
     if statut:
         query = query.where(Devis.statut == statut)
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(
+            Devis.reference.ilike(motif)
+            | Devis.client_raison_sociale.ilike(motif)
+            | Devis.offre_nom.ilike(motif)
+        )
+    query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
     result = await db.execute(query)
     return result.scalars().all()
 

@@ -75,6 +75,7 @@ class OptionUpdate(BaseModel):
 async def list_options(
     categorie: str | None = None,
     type_ligne: str | None = None,
+    q: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     query = select(Option).where(Option.actif).order_by(Option.ordre)
@@ -82,6 +83,13 @@ async def list_options(
         query = query.where(Option.categorie == categorie)
     if type_ligne:
         query = query.where(Option.type_ligne == type_ligne)
+    if q:
+        motif = f"%{q.strip()}%"
+        query = query.where(
+            Option.nom.ilike(motif)
+            | Option.code.ilike(motif)
+            | Option.categorie.ilike(motif)
+        )
     result = await db.execute(query)
     return result.scalars().all()
 

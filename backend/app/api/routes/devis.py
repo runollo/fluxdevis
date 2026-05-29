@@ -18,6 +18,9 @@ from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, Sta
 from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis
 from app.services.generation_devis import generer_devis, repartition_echeances
+from app.services.facturation_maintenance import (
+    generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
+)
 
 router = APIRouter()
 
@@ -40,6 +43,13 @@ class DevisSummary(BaseModel):
     total_ttc: Decimal
 
     model_config = {"from_attributes": True}
+
+
+class FactureGenereeInfo(BaseModel):
+    id: int
+    numero: str
+    type: str
+    total_ttc: Decimal
 
 
 class DevisCreateRequest(BaseModel):
@@ -117,12 +127,29 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     if not d:
         raise HTTPException(404, "Devis non trouve")
 
+    recurrent_ht = montant_recurrent_ht(d)
+    periode_due = await prochaine_periode(db, d)
+    maintenance = {
+        "recurrent_ht": str(recurrent_ht),
+        "recurrent_ttc": str((recurrent_ht * Decimal("1.20")).quantize(Decimal("0.01"))),
+        "a_facturer": periode_due is not None,
+        "leasing": d.mode_reglement == ModeReglement.LEASING,
+        "periode_due": (
+            {
+                "debut": periode_due["debut"].isoformat(),
+                "fin": periode_due["fin"].isoformat(),
+                "montant_ttc": str(periode_due["montant_ttc"]),
+            } if periode_due else None
+        ),
+    }
+
     return {
         "id": d.id,
         "reference": d.reference,
         "statut": d.statut.value,
         "date_emission": d.date_emission.isoformat(),
         "date_validite": d.date_validite.isoformat(),
+        "date_mise_en_ligne": d.date_mise_en_ligne.isoformat() if d.date_mise_en_ligne else None,
         "client_raison_sociale": d.client_raison_sociale,
         "client_adresse": d.client_adresse,
         "client_cp": d.client_cp,
@@ -145,6 +172,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         "total_ht": str(d.total_ht),
         "total_tva": str(d.total_tva),
         "total_ttc": str(d.total_ttc),
+        "maintenance": maintenance,
         "options": [
             {
                 "code": o.code, "nom": o.nom, "type_ligne": o.type_ligne,
@@ -189,6 +217,42 @@ async def changer_statut_devis(
     return devis
 
 
+class MiseEnLigneUpdate(BaseModel):
+    date_mise_en_ligne: date | None = None
+
+
+@router.patch("/{devis_id}/mise-en-ligne", response_model=DevisSummary)
+async def definir_mise_en_ligne(
+    devis_id: int, data: MiseEnLigneUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Definit (ou efface) la date de mise en ligne du site, qui declenche la maintenance."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    devis.date_mise_en_ligne = data.date_mise_en_ligne
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
+@router.post("/{devis_id}/factures-maintenance", response_model=FactureGenereeInfo, status_code=201)
+async def generer_facture_maintenance_endpoint(
+    devis_id: int, db: AsyncSession = Depends(get_db)
+):
+    """Genere la facture de maintenance de la prochaine periode due (mois glissant)."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    try:
+        facture = await generer_facture_maintenance(db, devis)
+    except MaintenanceError as e:
+        raise HTTPException(400, str(e))
+    return FactureGenereeInfo(
+        id=facture.id, numero=facture.numero,
+        type=facture.type.value, total_ttc=facture.total_ttc,
+    )
+
+
 @router.get("/{devis_id}/document")
 async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     """Genere et retourne le devis au format Word (.docx)."""
@@ -221,13 +285,6 @@ _TVA = Decimal("0.20")
 
 def _ht_from_ttc(ttc: Decimal) -> Decimal:
     return (ttc / (Decimal("1") + _TVA)).quantize(Decimal("0.01"))
-
-
-class FactureGenereeInfo(BaseModel):
-    id: int
-    numero: str
-    type: str
-    total_ttc: Decimal
 
 
 @router.post("/{devis_id}/factures", response_model=list[FactureGenereeInfo], status_code=201)

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -17,9 +17,14 @@ interface ArticleOffert { designation: string; prix_vente: string; }
 interface FactureLien {
   id: number; numero: string; type: string; statut: string; total_ttc: string; date_emission: string;
 }
+interface Maintenance {
+  recurrent_ht: string; recurrent_ttc: string; a_facturer: boolean; leasing: boolean;
+  periode_due: { debut: string; fin: string; montant_ttc: string } | null;
+}
 interface DevisDetail {
   id: number; reference: string; statut: string;
-  date_emission: string; date_validite: string;
+  date_emission: string; date_validite: string; date_mise_en_ligne: string | null;
+  maintenance: Maintenance;
   client_raison_sociale: string; client_adresse: string | null;
   client_cp: string | null; client_ville: string | null;
   client_interlocuteur: string | null; client_telephone: string | null; client_siret: string | null;
@@ -50,6 +55,9 @@ const STATUT_FACTURE: Record<string, string> = {
   payee: "bg-green-100 text-green-700", en_retard: "bg-red-100 text-red-700",
   annulee: "bg-orange-100 text-orange-700",
 };
+const TYPE_FACTURE: Record<string, string> = {
+  acompte: "Acompte", solde: "Solde", maintenance: "Maintenance",
+};
 
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value) return null;
@@ -61,7 +69,7 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string }> }) {
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
@@ -205,6 +213,68 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
         <div className="flex justify-between text-base font-bold py-1 border-t mt-1 pt-2"><span>Total TTC</span><span>{eur(d.total_ttc)}</span></div>
       </div>
 
+      {/* Mise en ligne & maintenance (recurrent) */}
+      {Number(d.maintenance.recurrent_ttc) > 0 && (
+        <div className="bg-white border rounded-lg p-4 mt-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Maintenance (recurrent)</h2>
+
+          {params.maint_erreur && (
+            <div className="mb-3 rounded border border-orange-200 bg-orange-50 p-2 text-sm text-orange-700">
+              Generation impossible : periode pas encore commencee, deja facturee, ou date de mise en ligne manquante.
+            </div>
+          )}
+
+          <p className="text-sm mb-3">
+            Abonnement mensuel : <span className="font-semibold">{eur(d.maintenance.recurrent_ttc)} TTC / mois</span>
+            <span className="text-gray-400"> ({eur(d.maintenance.recurrent_ht)} HT)</span>
+          </p>
+
+          {d.maintenance.leasing ? (
+            <p className="text-sm text-gray-500 italic">
+              Mode leasing : la maintenance est geree par le leaser (facturation a venir).
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {/* Date de mise en ligne */}
+              <form action={definirMiseEnLigne} className="flex flex-wrap items-end gap-2">
+                <input type="hidden" name="devis_id" value={d.id} />
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Date de mise en ligne du site</label>
+                  <input type="date" name="date_mise_en_ligne" defaultValue={d.date_mise_en_ligne ?? ""}
+                    className="border rounded px-3 py-2 text-sm" />
+                </div>
+                <button type="submit" className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                  Enregistrer
+                </button>
+              </form>
+
+              {!d.date_mise_en_ligne ? (
+                <p className="text-sm text-gray-500">
+                  Renseignez la date de mise en ligne pour activer la facturation de la maintenance.
+                </p>
+              ) : d.maintenance.a_facturer && d.maintenance.periode_due ? (
+                <div className="flex flex-wrap items-center gap-3 rounded border border-green-200 bg-green-50 p-3">
+                  <p className="text-sm text-green-800">
+                    Periode a facturer : <span className="font-medium">{d.maintenance.periode_due.debut} au {d.maintenance.periode_due.fin}</span>
+                    {" "}- {eur(d.maintenance.periode_due.montant_ttc)} TTC
+                  </p>
+                  <form action={genererFactureMaintenance}>
+                    <input type="hidden" name="devis_id" value={d.id} />
+                    <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">
+                      Generer la facture de maintenance
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">
+                  Maintenance a jour : la prochaine periode n&apos;a pas encore commence.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Factures liees */}
       <div className="bg-white border rounded-lg p-4 mt-4">
         <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Factures ({d.factures.length})</h2>
@@ -216,6 +286,7 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
               <li key={f.id} className="py-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <p className="font-mono text-sm truncate">{f.numero}</p>
+                  <p className="text-xs text-gray-400">{TYPE_FACTURE[f.type] || f.type}</p>
                   <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${STATUT_FACTURE[f.statut] || "bg-gray-100 text-gray-700"}`}>{f.statut}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

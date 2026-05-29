@@ -51,6 +51,9 @@ class Devis(Base, TimestampMixin):
     # Dates
     date_emission: Mapped[date] = mapped_column(Date)
     date_validite: Mapped[date] = mapped_column(Date)
+    # Mise en ligne du site : declenche la facturation du recurrent (maintenance).
+    # Independante du plan de paiement du setup.
+    date_mise_en_ligne: Mapped[date | None] = mapped_column(Date)
 
     # Client (FK + snapshot des infos au moment du devis)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))

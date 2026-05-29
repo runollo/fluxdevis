@@ -219,6 +219,27 @@ Reste a faire :
 - Pagination
 - Export Excel
 
+### Phase F — Facturation du recurrent / maintenance (terminee 2026-05-29)
+Flux INDEPENDANT du setup : la maintenance demarre a la mise en ligne du site,
+pas selon le plan de paiement du setup. Mois glissant (anniversaire), sans prorata.
+- Champ `devis.date_mise_en_ligne` (ajoute via ALTER TABLE ; le modele le porte donc
+  create_all l'inclut sur une base neuve). Endpoint `PATCH /api/devis/{id}/mise-en-ligne`.
+- Service reutilisable `app/services/facturation_maintenance.py` :
+  `ajouter_mois`, `periode_pour_index`, `montant_recurrent_ht`, `prochaine_periode`,
+  `generer_facture_maintenance` (cree la facture de la prochaine periode due),
+  `devis_maintenance_dus` (liste ce qui est a facturer aujourd'hui).
+  Garde-fou : ne facture jamais une periode future (start > today) -> erreur.
+- `POST /api/devis/{id}/factures-maintenance` : genere la facture maintenance de la
+  prochaine periode (type MAINTENANCE, periode_debut/fin, mention "reconductible").
+- Leasing EXCLU : maintenance geree par le leaser, a developper au 1er contrat leasing.
+- Frontend : section "Maintenance (recurrent)" sur /devis/detail (montant mensuel TTC,
+  formulaire date de mise en ligne, periode a facturer + bouton generer). Server Actions
+  `definirMiseEnLigne` et `genererFactureMaintenance`. Type affiche sur les factures.
+- AUTOMATISATION FUTURE (prevue mais non codee) : `GET /api/factures/maintenance/dus`
+  expose les maintenances dues. Un scenario Make (HTTP) ou un cron interne peut le poller
+  puis appeler POST .../factures-maintenance. Pour un envoi email (Resend), il faudra
+  ajouter l'email client au snapshot devis (actuellement absent).
+
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant
 - A implementer si besoin plus tard (admin, commercial, apporteur)

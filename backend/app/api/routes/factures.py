@@ -11,6 +11,7 @@ from app.models.facture import Facture, StatutFacture, TypeFacture
 from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
+from app.services.facturation_maintenance import devis_maintenance_dus
 from pydantic import BaseModel
 from decimal import Decimal
 from datetime import date
@@ -46,6 +47,16 @@ async def list_factures(
     return result.scalars().all()
 
 
+@router.get("/maintenance/dus")
+async def maintenance_dus(db: AsyncSession = Depends(get_db)):
+    """Liste les factures de maintenance dues aujourd'hui (pour automatisation Make/cron).
+
+    Ne cree rien : retourne les devis a facturer avec la periode concernee. Une
+    automatisation peut ensuite appeler POST /api/devis/{id}/factures-maintenance.
+    """
+    return await devis_maintenance_dus(db)
+
+
 @router.get("/{facture_id}", response_model=FactureSummary)
 async def get_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
     facture = await db.get(Facture, facture_id)
@@ -78,6 +89,10 @@ async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db
 
     cp_ville = " ".join(x for x in [devis.client_cp, devis.client_ville] if x) if devis else ""
 
+    periode = None
+    if facture.type == TypeFacture.MAINTENANCE and facture.periode_debut and facture.periode_fin:
+        periode = f"{facture.periode_debut.strftime('%d/%m/%Y')} au {facture.periode_fin.strftime('%d/%m/%Y')}"
+
     data = FactureData(
         numero=facture.numero,
         type_facture=facture.type.value,
@@ -106,6 +121,7 @@ async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db
         prix_unitaire_ht=facture.total_ht,
         montant_ht=facture.total_ht,
         devis_ref=devis.reference if devis else "",
+        periode=periode,
         echeances=ech_rows,
         idx_echeance=idx_echeance,
     )

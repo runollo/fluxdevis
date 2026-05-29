@@ -280,3 +280,26 @@ export async function changerStatut(formData: FormData) {
   await serverPatch(`/devis/${id}/statut`, { statut });
   redirect(`/devis/detail?id=${id}`);
 }
+
+
+export async function definirMiseEnLigne(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  const date = (formData.get("date_mise_en_ligne") as string) || null;
+  if (!id) redirect("/devis");
+  await serverPatch(`/devis/${id}/mise-en-ligne`, { date_mise_en_ligne: date });
+  redirect(`/devis/detail?id=${id}`);
+}
+
+
+export async function genererFactureMaintenance(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  let ok = false;
+  try {
+    await serverPost(`/devis/${id}/factures-maintenance`, {});
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  redirect(`/devis/detail?id=${id}${ok ? "" : "&maint_erreur=1"}`);
+}

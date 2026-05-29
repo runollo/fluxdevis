@@ -379,6 +379,9 @@ export async function restaurerFacture(formData: FormData) {
 }
 
 
+// FONCTIONNALITE PREVUE, NON ACTIVEE (cf. HANDOFF, section envoi email).
+// Tant que RESEND_API_KEY n'est pas configuree cote backend, l'appel renvoie une
+// erreur "non configure" affichee via suppr_msg ; aucun email ne part.
 export async function envoyerFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";

@@ -1,5 +1,15 @@
 """Envoi d'emails transactionnels via Resend (https://resend.com).
 
+==============================================================================
+STATUT : FONCTIONNALITE PREVUE, NON ACTIVEE (a reprendre ulterieurement).
+Au 2026-05-29, il n'y a PAS de compte Resend ni de cle API. Tant que
+RESEND_API_KEY est vide dans backend/.env, l'envoi est desactive (email_actif()
+renvoie False et envoyer_email leve EmailError) : aucun email ne part.
+Bruno doit d'abord decider comment il gere l'envoi (compte Resend + domaine
+verifie, ou autre solution). Checklist de reprise dans HANDOFF.md, section
+"Envoi email / automatisation maintenance".
+==============================================================================
+
 Utilise l'API HTTP Resend (pas de SDK) pour rester leger. La cle API et
 l'expediteur sont lus depuis la configuration (RESEND_API_KEY, RESEND_FROM).
 Les pieces jointes (ex : facture Word) sont transmises en base64.

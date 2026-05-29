@@ -277,19 +277,37 @@ pas selon le plan de paiement du setup. Mois glissant (anniversaire), sans prora
   Capturee a la creation du devis (`create_devis`), exposee dans `GET /api/devis/{id}/detail`
   (section Client du frontend) ET dans `GET /api/factures/maintenance/dus` (cle
   `client_email`).
-- ENVOI EMAIL via RESEND (fait 2026-05-29) : service `app/services/email_resend.py`
-  (API HTTP Resend via httpx, piece jointe en base64, `EmailError`). Endpoint
-  `POST /api/factures/{id}/envoyer` : genere le Word de la facture et l'envoie au
-  `client_email` du devis (sujet/corps adaptes maintenance vs acompte). Generation
-  Word factorisee dans `_generer_facture_docx` (partagee avec le telechargement).
-  Frontend : bouton "Envoyer (par email)" sur /factures et /devis/detail (Server
-  Action `envoyerFacture`), bandeau succes `?envoye=1`, erreurs via `suppr_msg`.
-  Config : `RESEND_API_KEY` et `RESEND_FROM` dans `backend/.env` (settings
-  pydantic). From par defaut = `marque <email>` de la societe si `RESEND_FROM` vide.
-  A FAIRE cote Bruno : creer la cle API Resend, verifier un domaine d'envoi, remplir
-  `.env`. A CODER : le declencheur automatique (cron interne ou scenario Make qui
-  poll `/maintenance/dus`, cree la facture via POST `.../factures-maintenance`, puis
-  POST `.../{id}/envoyer`).
+### Envoi email (Resend) — CODE PREVU, NON ACTIVE — A REPRENDRE
+IMPORTANT : cette phase n'est PAS terminee. Le code de plomberie est en place mais
+volontairement DORMANT. Au 2026-05-29 : pas de compte Resend, pas de cle API, aucun
+email ne peut partir. Bruno n'a pas encore decide comment il gere l'envoi — ne rien
+activer ni configurer sans son accord explicite.
+
+Etat du code (deja ecrit, inactif) :
+- Service `app/services/email_resend.py` (API HTTP Resend via httpx, piece jointe
+  base64, `EmailError`). `email_actif()` renvoie False tant que la cle est absente.
+- Endpoint `POST /api/factures/{id}/envoyer` : genere le Word (helper
+  `_generer_facture_docx`, partage avec le telechargement) et l'enverrait au
+  `client_email` du devis. Renvoie 400 "non configure" tant que la cle manque.
+- Frontend : bouton "Envoyer" sur /factures et /devis/detail (Server Action
+  `envoyerFacture`), bandeau succes `?envoye=1`. Si on clique aujourd'hui : message
+  d'erreur "non configure", aucun envoi.
+- Config : `RESEND_API_KEY` et `RESEND_FROM` dans `backend/.env` (laisses VIDES).
+  From par defaut = `marque <email>` de la societe si `RESEND_FROM` vide.
+- Tous les fichiers concernes portent un commentaire "FONCTIONNALITE PREVUE, NON ACTIVEE".
+
+Checklist de reprise (quand Bruno aura tranche sa solution d'envoi) :
+1. Decider de la solution (Resend ? autre fournisseur ? envoi manuel ?).
+2. Si Resend : creer le compte, verifier un domaine d'envoi (DNS), generer la cle.
+3. Renseigner `RESEND_API_KEY` et `RESEND_FROM` dans `backend/.env`.
+4. Tester un envoi reel (facture acompte puis maintenance) vers une adresse de test.
+5. Optionnel : masquer les boutons "Envoyer" tant que l'envoi n'est pas actif
+   (exposer un flag d'activation cote API) pour ne pas montrer une action qui echoue.
+6. Coder le DECLENCHEUR automatique de la maintenance : cron interne ou scenario
+   Make qui poll `GET /api/factures/maintenance/dus`, cree la facture via
+   `POST /api/devis/{id}/factures-maintenance`, puis `POST /api/factures/{id}/envoyer`.
+7. Eventuellement : choisir PDF plutot que Word pour la piece jointe (format non
+   modifiable cote client).
 
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant

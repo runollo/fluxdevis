@@ -219,7 +219,12 @@ def _corps_email_facture(facture: Facture, devis, societe) -> tuple[str, str]:
 
 @router.post("/{facture_id}/envoyer")
 async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_db)):
-    """Envoie la facture (Word en piece jointe) au client par email via Resend."""
+    """Envoie la facture (Word en piece jointe) au client par email via Resend.
+
+    FONCTIONNALITE PREVUE, NON ACTIVEE (cf. app/services/email_resend.py et
+    HANDOFF). Tant que RESEND_API_KEY n'est pas renseignee, renvoie 400 et
+    n'envoie rien. A finaliser quand Bruno aura choisi sa solution d'envoi.
+    """
     if not email_actif():
         raise HTTPException(
             400, "Envoi email non configure : renseignez RESEND_API_KEY dans backend/.env."

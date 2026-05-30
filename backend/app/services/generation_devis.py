@@ -1,7 +1,13 @@
 """Service de generation de devis Word.
 
-Construit un document professionnel a partir d'un Devis (snapshot fige)
-et de la Societe emettrice. Reutilise les helpers Word mutualises.
+Devis oriente CLIENT : presentation commerciale et professionnelle.
+Principe (cf. pratique des agences web) :
+- la creation est presentee comme UN livrable a UN prix (pas de prix par option,
+  source de friction) ; le detail du perimetre est liste sans prix ;
+- les avantages (articles offerts + remise) sont mis en valeur pour materialiser
+  la valeur percue ;
+- l'abonnement mensuel est nettement separe (engagement recurrent distinct) ;
+- ancrage de prix : valeur catalogue -> avantages -> net a payer.
 """
 
 from decimal import Decimal, ROUND_HALF_UP
@@ -14,14 +20,15 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from app.services.word_helpers import (
-    C_NAVY, C_TEXT, C_WHITE, C_AHEAD, C_PAID,
-    HEX_NAVY, HEX_PAID, HEX_CURR,
+    C_NAVY, C_TEXT, C_WHITE, C_AHEAD, C_PAID, C_CURR,
+    HEX_NAVY, HEX_PAID,
     fmt_eur, setup_page, force_arial, tbl_no_spacing, full_tbl_borders,
     cell_bg, cell_w, row_height, p_fmt, run, cell_text, hline, spacer,
 )
 
 D = Decimal
 TVA_RATE = D("0.20")
+HEX_AVANTAGE = "EEF7F1"   # vert tres clair (encadre avantages)
 
 
 def _q(val) -> Decimal:
@@ -29,51 +36,93 @@ def _q(val) -> Decimal:
 
 
 # Repartition des echeances selon le plan de paiement (comptant).
-# Chaque echeance est definie par une fraction EXACTE (pas un pourcentage
-# flottant) pour que 33/33/33 corresponde a des tiers reels.
 _PLAN_PARTS = {
     "100%": [("Solde", Fraction(1, 1))],
     "50/50": [("Acompte 50 %", Fraction(1, 2)), ("Solde 50 %", Fraction(1, 2))],
     "33/33/33": [
-        ("Acompte 1/3", Fraction(1, 3)),
-        ("2e versement 1/3", Fraction(1, 3)),
-        ("Solde 1/3", Fraction(1, 3)),
+        ("Acompte 1/3 (a la commande)", Fraction(1, 3)),
+        ("2e versement 1/3 (a mi-parcours)", Fraction(1, 3)),
+        ("Solde 1/3 (a la livraison)", Fraction(1, 3)),
     ],
     "50/25/25": [
-        ("Acompte 50 %", Fraction(1, 2)),
+        ("Acompte 50 % (a la commande)", Fraction(1, 2)),
         ("2e versement 25 %", Fraction(1, 4)),
-        ("Solde 25 %", Fraction(1, 4)),
+        ("Solde 25 % (a la livraison)", Fraction(1, 4)),
     ],
     "25/25/25/25": [
-        ("Acompte 25 %", Fraction(1, 4)),
+        ("Acompte 25 % (a la commande)", Fraction(1, 4)),
         ("2e versement 25 %", Fraction(1, 4)),
         ("3e versement 25 %", Fraction(1, 4)),
-        ("Solde 25 %", Fraction(1, 4)),
+        ("Solde 25 % (a la livraison)", Fraction(1, 4)),
     ],
 }
 
 
 def repartition_echeances(plan: str | None, total_ttc) -> list[tuple[str, Decimal]]:
-    """Repartit un montant TTC selon le plan de paiement.
-
-    Retourne une liste de tuples (libelle, montant_ttc). La somme des montants
-    vaut exactement le total : l'ecart d'arrondi est porte par le premier
-    versement (cf. repartir_au_centime).
-    """
+    """Repartit un montant TTC selon le plan de paiement (somme exacte au centime)."""
     parts = _PLAN_PARTS.get(plan or "100%", _PLAN_PARTS["100%"])
     montants = repartir_au_centime(total_ttc, [frac for _, frac in parts])
     return [(label, montants[i]) for i, (label, _) in enumerate(parts)]
 
 
-def generer_devis(devis, societe) -> BytesIO:
-    """Genere un devis Word et retourne un buffer BytesIO.
+# ---------------------------------------------------------------------------
+# Calcul des donnees derivees (valeur catalogue, avantages, mensuel net)
+# ---------------------------------------------------------------------------
 
-    `devis` : instance Devis avec relations options/lignes/articles_offerts chargees.
-    `societe` : instance Societe emettrice (peut etre None).
+def _calcul_synthese(devis) -> dict:
+    """Reconstitue les montants commerciaux a partir du snapshot du devis.
+
+    Renvoie un dict avec : prix_creation_ht, remise_setup, offerts (liste),
+    offerts_setup_total, avantages_total, valeur_catalogue,
+    mensuel_brut, mensuel_net, remise_pct_recurrent.
     """
+    prix_creation_ht = _q(devis.total_ht)
+    remise_setup = _q(devis.remise_eur_setup)
+
+    offerts = [
+        {"designation": a.designation, "valeur": _q(a.prix_vente)}
+        for a in sorted(devis.articles_offerts or [], key=lambda x: x.ordre)
+    ]
+    offerts_total = sum((o["valeur"] for o in offerts), D("0"))
+    offerts_recurrent = _q(getattr(devis, "total_offerts_recurrent_ht", 0) or 0)
+    offerts_setup_total = offerts_total - offerts_recurrent
+    if offerts_setup_total < 0:
+        offerts_setup_total = D("0")
+
+    # Avantages mis en avant cote creation (one-shot) : offerts setup + remise setup.
+    avantages_total = offerts_setup_total + remise_setup
+    valeur_catalogue = prix_creation_ht + avantages_total
+
+    # Mensuel : brut (catalogue) puis net (apres deduction offerts recurrent et remise).
+    mensuel_brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    remise_pct = _q(devis.remise_pct_recurrent) / D("100")
+    mensuel_net = _q((mensuel_brut - offerts_recurrent) * (D("1") - remise_pct))
+    if mensuel_net < 0:
+        mensuel_net = D("0")
+
+    return {
+        "prix_creation_ht": prix_creation_ht,
+        "remise_setup": remise_setup,
+        "offerts": offerts,
+        "offerts_setup_total": offerts_setup_total,
+        "avantages_total": avantages_total,
+        "valeur_catalogue": valeur_catalogue,
+        "mensuel_brut": mensuel_brut,
+        "mensuel_net": mensuel_net,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Document
+# ---------------------------------------------------------------------------
+
+def generer_devis(devis, societe) -> BytesIO:
+    """Genere un devis Word oriente client et retourne un buffer BytesIO."""
     doc = Document()
     setup_page(doc)
     force_arial(doc)
+
+    s = _calcul_synthese(devis)
 
     _add_header(doc, devis, societe)
     spacer(doc, 4)
@@ -82,30 +131,24 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_client_objet(doc, devis)
     spacer(doc, 6)
 
-    if devis.accroche:
-        _add_accroche(doc, devis.accroche)
-        spacer(doc, 4)
+    _add_accroche(doc, devis)
+    spacer(doc, 5)
 
-    _add_prestations(doc, devis)
-    spacer(doc, 4)
+    _add_creation(doc, devis, s)
+    spacer(doc, 5)
 
-    mensuel_brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
-    mensuel_ht = mensuel_brut - _q(devis.total_offerts_recurrent_ht or 0)
-    if mensuel_ht < 0:
-        mensuel_ht = _q(0)
-    if mensuel_ht > 0:
-        _add_maintenance(doc, mensuel_ht)
-        spacer(doc, 4)
+    if s["avantages_total"] > 0:
+        _add_avantages(doc, s)
+        spacer(doc, 5)
 
-    articles = [a for a in devis.articles_offerts] if devis.articles_offerts else []
-    if articles:
-        _add_articles_offerts(doc, articles)
-        spacer(doc, 4)
+    if s["mensuel_net"] > 0:
+        _add_abonnement(doc, devis, s)
+        spacer(doc, 5)
 
-    _add_totaux(doc, devis)
+    _add_totaux(doc, devis, s)
     spacer(doc, 6)
 
-    if str(devis.mode_reglement.value if hasattr(devis.mode_reglement, "value") else devis.mode_reglement) == "Leasing":
+    if _mode_label(devis) == "Leasing":
         _add_leasing(doc, devis)
     else:
         _add_echeancier(doc, devis)
@@ -204,143 +247,223 @@ def _add_client_objet(doc, devis):
     run(p, "OBJET", bold=True, size=7, color=C_NAVY)
     p = right.add_paragraph()
     p_fmt(p, before=0, after=0)
-    objet = f"{devis.offre_nom}" + (f" ({devis.offre_type_site})" if devis.offre_type_site else "")
+    objet = "Création de votre site internet"
     run(p, objet, size=8, color=C_TEXT)
+    p = right.add_paragraph()
+    p_fmt(p, before=0, after=0)
+    sous = f"{devis.offre_nom}" + (f" ({devis.offre_type_site})" if devis.offre_type_site else "")
+    run(p, sous, size=8, color=C_AHEAD)
 
 
-def _add_accroche(doc, accroche):
+def _add_accroche(doc, devis):
+    texte = (devis.accroche or "").strip() or (
+        "Voici notre proposition pour la création de votre site internet, "
+        "pensé pour renforcer votre visibilité et convertir vos visiteurs en clients."
+    )
     p = doc.add_paragraph()
     p_fmt(p, before=0, after=0)
-    run(p, accroche, italic=True, size=9, color=C_TEXT)
+    run(p, texte, italic=True, size=9, color=C_TEXT)
 
 
-def _add_prestations(doc, devis):
-    """Tableau des prestations setup (one-time) : offre + lignes + options payantes."""
-    rows = []
+def _items_offerts_designations(devis) -> set[str]:
+    return {(a.designation or "").strip() for a in (devis.articles_offerts or [])}
 
-    # Offre principale
-    base = f"{devis.offre_nom}"
+
+def _add_creation(doc, devis, s):
+    """Section CREATION : titre offre + perimetre (sans prix) + prix unique."""
+    offerts_noms = _items_offerts_designations(devis)
+
+    # En-tete de section (bandeau navy)
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "CRÉATION DE VOTRE SITE",
+              bold=True, size=10, color=C_WHITE)
+
+    # Corps : sous-titre + liste a puces + prix
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    cell = tbl.rows[0].cells[0]
+    cell_w(cell, 17)
+
+    # Sous-titre (l'offre)
+    p = cell.paragraphs[0]
+    p_fmt(p, before=2, after=2)
+    titre = f"Site {devis.offre_nom}"
     if devis.offre_type_site:
-        base += f" ({devis.offre_type_site})"
-    rows.append((base, "1", _q(devis.prix_vente_final), _q(devis.prix_vente_final)))
+        titre += f" ({devis.offre_type_site})"
+    run(p, titre, bold=True, size=9, color=C_NAVY)
 
-    # Prestations sur mesure
+    # Perimetre
+    p = cell.add_paragraph()
+    p_fmt(p, before=2, after=1)
+    run(p, "Votre projet comprend :", bold=True, size=8, color=C_TEXT)
+
+    # Construire la liste (sans prix) : prestations + options setup (payantes + incluses)
+    puces = []
     for lg in sorted(devis.lignes or [], key=lambda x: x.ordre):
-        qte = lg.quantite or 1
-        pu = _q(lg.prix_unitaire_vente)
-        rows.append((lg.designation, str(qte), pu, _q(pu * qte)))
-
-    # Options : setup payantes + incluses
-    incluses = []
+        nom = (lg.designation or "").strip()
+        if nom:
+            puces.append((nom, "offert" if nom in offerts_noms else "normal"))
     for opt in sorted(devis.options or [], key=lambda x: x.ordre):
         type_ligne = (opt.type_ligne or "").upper()
-        if type_ligne in ("RECURRENT", "PACK"):
-            continue  # traitees dans la section maintenance
-        if opt.inclus or _q(opt.prix_setup_ht) == 0:
-            incluses.append(opt.nom)
+        if type_ligne in ("RECURRENT", "OPTION_RECURRENT", "PACK"):
+            continue  # va dans l'abonnement
+        nom = (opt.nom or "").strip()
+        if not nom:
             continue
         qte = opt.quantite or 1
-        pu = _q(opt.prix_setup_ht)
-        rows.append((opt.nom, str(qte), pu, _q(pu * qte)))
+        libelle = nom if qte <= 1 else f"{nom} (x{qte})"
+        if nom in offerts_noms:
+            etat = "offert"
+        elif opt.inclus or _q(opt.prix_setup_ht) == 0:
+            etat = "inclus"
+        else:
+            etat = "normal"
+        puces.append((libelle, etat))
 
-    # En-tete de section
-    p = doc.add_paragraph()
-    p_fmt(p, before=0, after=2)
-    run(p, "Prestations", bold=True, size=9, color=C_NAVY)
+    for libelle, etat in puces:
+        p = cell.add_paragraph()
+        p_fmt(p, before=0, after=0)
+        run(p, "•  ", size=8, color=C_NAVY)
+        run(p, libelle, size=8, color=C_TEXT)
+        if etat == "offert":
+            run(p, "  (offert)", size=8, color=C_PAID, bold=True)
+        elif etat == "inclus":
+            run(p, "  (inclus)", size=8, color=C_AHEAD, italic=True)
 
-    tbl = doc.add_table(rows=1 + len(rows), cols=4)
+    # Prix de la creation
+    p = cell.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_fmt(p, before=4, after=2)
+    run(p, "Prix de la création HT : ", bold=True, size=10, color=C_TEXT)
+    run(p, fmt_eur(s["prix_creation_ht"]), bold=True, size=11, color=C_NAVY)
+
+
+def _add_avantages(doc, s):
+    """Encadre VOS AVANTAGES : offerts (valeur) + remise + total."""
+    rows = []
+    for o in s["offerts"]:
+        rows.append((f"Offert : {o['designation']}", "valeur " + fmt_eur(o["valeur"])))
+    if s["remise_setup"] > 0:
+        rows.append(("Remise commerciale", "− " + fmt_eur(s["remise_setup"])))
+
+    # En-tete
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_PAID)
+    cell_text(tbl_head.rows[0].cells[0], "VOS AVANTAGES", bold=True, size=10, color=C_PAID)
+
+    tbl = doc.add_table(rows=len(rows) + 1, cols=2)
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
-
-    headers = ["Désignation", "Qté", "P.U. HT", "Montant HT"]
-    widths = [10.0, 1.6, 2.7, 2.7]
-    for i, (h, w) in enumerate(zip(headers, widths)):
-        cell_bg(tbl.rows[0].cells[i], HEX_NAVY)
-        cell_w(tbl.rows[0].cells[i], w)
-        cell_text(tbl.rows[0].cells[i], h, bold=True, size=8, color=C_WHITE,
-                  align=WD_ALIGN_PARAGRAPH.CENTER)
-
-    aligns = [WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER,
-              WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.RIGHT]
-    for r_idx, (desig, qte, pu, montant) in enumerate(rows, start=1):
-        vals = [desig, qte, fmt_eur(pu), fmt_eur(montant)]
-        for i, (v, a, w) in enumerate(zip(vals, aligns, widths)):
-            cell_w(tbl.rows[r_idx].cells[i], w)
-            cell_text(tbl.rows[r_idx].cells[i], v, size=8, align=a)
-
-    # Options incluses (listees en gris)
-    if incluses:
-        p = doc.add_paragraph()
-        p_fmt(p, before=3, after=0)
-        run(p, "Inclus dans l’offre : " + ", ".join(incluses),
-            italic=True, size=7, color=C_AHEAD)
-
-
-def _add_maintenance(doc, mensuel_ht):
-    p = doc.add_paragraph()
-    p_fmt(p, before=0, after=2)
-    run(p, "Maintenance / Abonnement mensuel", bold=True, size=9, color=C_NAVY)
-
-    tbl = doc.add_table(rows=2, cols=2)
-    tbl_no_spacing(tbl)
-    full_tbl_borders(tbl)
-    cell_bg(tbl.rows[0].cells[0], HEX_NAVY)
-    cell_bg(tbl.rows[0].cells[1], HEX_NAVY)
-    cell_w(tbl.rows[0].cells[0], 14)
-    cell_w(tbl.rows[0].cells[1], 3)
-    cell_text(tbl.rows[0].cells[0], "Prestation récurrente", bold=True, size=8, color=C_WHITE)
-    cell_text(tbl.rows[0].cells[1], "Mensuel HT", bold=True, size=8, color=C_WHITE,
-              align=WD_ALIGN_PARAGRAPH.CENTER)
-    cell_text(tbl.rows[1].cells[0], "Abonnement maintenance et services récurrents", size=8)
-    cell_text(tbl.rows[1].cells[1], fmt_eur(mensuel_ht) + " /mois", size=8,
-              align=WD_ALIGN_PARAGRAPH.RIGHT)
-
-
-def _add_articles_offerts(doc, articles):
-    p = doc.add_paragraph()
-    p_fmt(p, before=0, after=2)
-    run(p, "Articles offerts", bold=True, size=9, color=C_NAVY)
-
-    tbl = doc.add_table(rows=1 + len(articles), cols=2)
-    tbl_no_spacing(tbl)
-    full_tbl_borders(tbl)
-    cell_bg(tbl.rows[0].cells[0], HEX_PAID)
-    cell_bg(tbl.rows[0].cells[1], HEX_PAID)
-    cell_w(tbl.rows[0].cells[0], 14)
-    cell_w(tbl.rows[0].cells[1], 3)
-    cell_text(tbl.rows[0].cells[0], "Désignation", bold=True, size=8, color=C_PAID)
-    cell_text(tbl.rows[0].cells[1], "Valeur", bold=True, size=8, color=C_PAID,
-              align=WD_ALIGN_PARAGRAPH.CENTER)
-    for i, art in enumerate(sorted(articles, key=lambda x: x.ordre), start=1):
-        cell_text(tbl.rows[i].cells[0], art.designation, size=8, color=C_PAID)
-        cell_text(tbl.rows[i].cells[1],
-                  fmt_eur(_q(art.prix_vente)) + " — Offert", size=8, color=C_PAID,
+    for i, (label, val) in enumerate(rows):
+        cell_bg(tbl.rows[i].cells[0], HEX_AVANTAGE)
+        cell_bg(tbl.rows[i].cells[1], HEX_AVANTAGE)
+        cell_w(tbl.rows[i].cells[0], 13)
+        cell_w(tbl.rows[i].cells[1], 4)
+        cell_text(tbl.rows[i].cells[0], label, size=8, color=C_PAID)
+        cell_text(tbl.rows[i].cells[1], val, size=8, color=C_PAID,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)
 
+    # Total avantages (ligne mise en avant)
+    last = len(rows)
+    cell_bg(tbl.rows[last].cells[0], HEX_PAID)
+    cell_bg(tbl.rows[last].cells[1], HEX_PAID)
+    cell_w(tbl.rows[last].cells[0], 13)
+    cell_w(tbl.rows[last].cells[1], 4)
+    cell_text(tbl.rows[last].cells[0],
+              "Soit un total d’avantages offerts sur votre projet",
+              bold=True, size=8, color=C_PAID)
+    cell_text(tbl.rows[last].cells[1], fmt_eur(s["avantages_total"]),
+              bold=True, size=9, color=C_PAID, align=WD_ALIGN_PARAGRAPH.RIGHT)
 
-def _add_totaux(doc, devis):
-    tbl = doc.add_table(rows=4, cols=2)
+
+def _add_abonnement(doc, devis, s):
+    """Section ABONNEMENT MENSUEL : perimetre recurrent + mensuel HT/TTC."""
+    # En-tete
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "ABONNEMENT MENSUEL",
+              bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
+    cell = tbl.rows[0].cells[0]
+    cell_w(cell, 17)
 
-    lines = [
-        ("Total HT", fmt_eur(_q(devis.total_ht))),
-        ("TVA 20 %", fmt_eur(_q(devis.total_tva))),
-        ("Total TTC", fmt_eur(_q(devis.total_ttc))),
-        ("Net à payer", fmt_eur(_q(devis.total_ttc))),
-    ]
-    for i, (label, val) in enumerate(lines):
-        cell_w(tbl.rows[i].cells[0], 14)
-        cell_w(tbl.rows[i].cells[1], 3)
-        is_last = i == 3
-        if is_last:
+    p = cell.paragraphs[0]
+    p_fmt(p, before=2, after=1)
+    run(p, "Comprend :", bold=True, size=8, color=C_TEXT)
+
+    for opt in sorted(devis.options or [], key=lambda x: x.ordre):
+        type_ligne = (opt.type_ligne or "").upper()
+        if type_ligne not in ("RECURRENT", "OPTION_RECURRENT", "PACK"):
+            continue
+        nom = (opt.nom or "").strip()
+        if not nom:
+            continue
+        p = cell.add_paragraph()
+        p_fmt(p, before=0, after=0)
+        run(p, "•  ", size=8, color=C_NAVY)
+        run(p, nom, size=8, color=C_TEXT)
+        if opt.inclus:
+            run(p, "  (inclus)", size=8, color=C_AHEAD, italic=True)
+
+    mensuel_net = s["mensuel_net"]
+    mensuel_brut = s["mensuel_brut"]
+    mensuel_ttc = _q(mensuel_net * (D("1") + TVA_RATE))
+
+    # Prix mensuel (avec catalogue barre si avantage)
+    p = cell.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_fmt(p, before=4, after=0)
+    if mensuel_brut > mensuel_net:
+        run(p, fmt_eur(mensuel_brut) + " ", size=9, color=C_AHEAD, strike=True)
+    run(p, "Abonnement HT : ", bold=True, size=9, color=C_TEXT)
+    run(p, fmt_eur(mensuel_net) + " /mois", bold=True, size=10, color=C_NAVY)
+
+    p = cell.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_fmt(p, before=0, after=2)
+    run(p, "Abonnement TTC : ", bold=True, size=9, color=C_TEXT)
+    run(p, fmt_eur(mensuel_ttc) + " /mois", bold=True, size=10, color=C_NAVY)
+
+    # Note
+    p = doc.add_paragraph()
+    p_fmt(p, before=2, after=0)
+    run(p, "Démarre à la mise en ligne du site. Sans engagement de durée.",
+        italic=True, size=7, color=C_AHEAD)
+
+
+def _add_totaux(doc, devis, s):
+    """Bloc totaux : ancrage valeur catalogue -> avantages -> net a payer TTC."""
+    lignes = []
+    if s["avantages_total"] > 0:
+        lignes.append(("Valeur catalogue HT", fmt_eur(s["valeur_catalogue"]), False, False))
+        lignes.append(("Avantages offerts", "− " + fmt_eur(s["avantages_total"]), False, False))
+    lignes.append(("Total HT", fmt_eur(_q(devis.total_ht)), False, False))
+    lignes.append(("TVA 20 %", fmt_eur(_q(devis.total_tva)), False, False))
+    lignes.append(("NET À PAYER (création)", fmt_eur(_q(devis.total_ttc)), True, True))
+
+    tbl = doc.add_table(rows=len(lignes), cols=2)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    for i, (label, val, is_total, _) in enumerate(lignes):
+        cell_w(tbl.rows[i].cells[0], 13)
+        cell_w(tbl.rows[i].cells[1], 4)
+        if is_total:
             cell_bg(tbl.rows[i].cells[0], HEX_NAVY)
             cell_bg(tbl.rows[i].cells[1], HEX_NAVY)
-        color = C_WHITE if is_last else C_TEXT
-        cell_text(tbl.rows[i].cells[0], label, bold=True, size=9, color=color,
+        color = C_WHITE if is_total else C_TEXT
+        size = 10 if is_total else 9
+        cell_text(tbl.rows[i].cells[0], label, bold=is_total, size=size, color=color,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)
-        cell_text(tbl.rows[i].cells[1], val, bold=is_last, size=9, color=color,
-                  align=WD_ALIGN_PARAGRAPH.RIGHT)
+        cell_text(tbl.rows[i].cells[1], val + (" TTC" if is_total else ""),
+                  bold=is_total, size=size, color=color, align=WD_ALIGN_PARAGRAPH.RIGHT)
 
 
 def _add_echeancier(doc, devis):
@@ -360,8 +483,8 @@ def _add_echeancier(doc, devis):
                   align=WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT)
 
     for idx, (label, montant) in enumerate(parts, start=1):
-        cell_w(tbl.rows[idx].cells[0], 14)
-        cell_w(tbl.rows[idx].cells[1], 3)
+        cell_w(tbl.rows[idx].cells[0], 13)
+        cell_w(tbl.rows[idx].cells[1], 4)
         cell_text(tbl.rows[idx].cells[0], label, size=8)
         cell_text(tbl.rows[idx].cells[1], fmt_eur(montant), size=8,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)
@@ -385,8 +508,8 @@ def _add_leasing(doc, devis):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
     for i, (label, val) in enumerate(lignes):
-        cell_w(tbl.rows[i].cells[0], 14)
-        cell_w(tbl.rows[i].cells[1], 3)
+        cell_w(tbl.rows[i].cells[0], 13)
+        cell_w(tbl.rows[i].cells[1], 4)
         cell_text(tbl.rows[i].cells[0], label, bold=True, size=8, color=C_TEXT,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)
         cell_text(tbl.rows[i].cells[1], val, size=8, color=C_TEXT,

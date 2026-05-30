@@ -447,46 +447,48 @@ export default function SimulateurClient({
               {calcul && <span className="text-xs text-gray-400">calcul...</span>}
             </div>
             {!result ? <p className="text-gray-400 text-sm">Calcul en cours...</p> : (
-              <div className="space-y-3 text-sm">
-                {recap.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">Recapitulatif du devis</h3>
-                    {recapSetup.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-[11px] font-semibold text-gray-400 uppercase">Prestation initiale (one-shot)</p>
-                        {recapSetup.map((l, i) => <LigneRecap key={`s${i}`} l={l} />)}
-                      </div>
-                    )}
-                    {recapRecurrent.length > 0 && (
-                      <div className="space-y-1 mt-3">
-                        <p className="text-[11px] font-semibold text-gray-400 uppercase">Abonnement mensuel</p>
-                        {recapRecurrent.map((l, i) => <LigneRecap key={`r${i}`} l={l} />)}
-                      </div>
-                    )}
-                  </div>
+              <div className="space-y-4 text-sm">
+
+                {/* 1. Recapitulatif (le panier), en cartes */}
+                {recapSetup.length > 0 && (
+                  <CarteRecap titre="Prestation initiale" sousTitre="paiement unique" lignes={recapSetup} />
                 )}
-                <Sec t="Totaux nets">
-                  <R l="Setup affiche HT" v={eur(result.prix_setup_affiche)} b />
-                  <R l="Setup TTC" v={eur(result.total_setup_ttc)} b />
-                  {N(result.prix_mensuel_affiche) > 0 && <R l="Mensuel affiche HT" v={eur(result.prix_mensuel_affiche)} />}
-                  {N(result.total_mensuel_ttc) > 0 && <R l="Mensuel TTC" v={eur(result.total_mensuel_ttc)} />}
-                </Sec>
-                <Sec t="Remises"><R l="Remise setup" v={eur(result.remise_eur_setup)} /><R l="Remise recurrent" v={eur(result.remise_eur_recurrent)} /></Sec>
-                <Sec t="Marge"><R l="Marge" v={eur(result.marge)} /><R l="Marge totale" v={eur(result.marge_totale)} b /></Sec>
-                {mode === "Comptant" && N(result.prelevement_1) > 0 && (
-                  <Sec t="Plan de paiement (TTC)">
-                    <R l="Prelevement 1" v={eur(result.prelevement_1)} />
-                    {N(result.prelevement_2) > 0 && <R l="Prelevement 2" v={eur(result.prelevement_2)} />}
-                    {N(result.prelevement_3) > 0 && <R l="Prelevement 3" v={eur(result.prelevement_3)} />}
-                    {N(result.prelevement_4) > 0 && <R l="Prelevement 4" v={eur(result.prelevement_4)} />}
-                    {N(result.recurrent_mensuel) > 0 && <R l="Recurrent mensuel" v={eur(result.recurrent_mensuel)} />}
+                {recapRecurrent.length > 0 && (
+                  <CarteRecap titre="Abonnement mensuel" sousTitre="recurrent" lignes={recapRecurrent} suffix="/mois" />
+                )}
+
+                {/* 2. Totaux a payer : HT -> TVA -> TTC, bien separes */}
+                <div className="rounded-lg border-2 border-[#1A355E]/15 bg-[#1A355E]/5 p-3 space-y-3">
+                  <BlocTotal
+                    titre="A payer (prestation initiale)"
+                    ht={result.total_setup_ht} tva={result.total_setup_tva} ttc={result.total_setup_ttc}
+                  />
+                  {N(result.total_mensuel_ttc) > 0 && (
+                    <BlocTotal
+                      titre="Puis chaque mois" suffix="/mois"
+                      ht={result.total_mensuel_ht} tva={result.total_mensuel_tva} ttc={result.total_mensuel_ttc}
+                    />
+                  )}
+                </div>
+
+                {/* 3. Plan de paiement (comptant) */}
+                {mode === "Comptant" && N(result.prelevement_1) > 0 && N(result.prelevement_2) > 0 && (
+                  <Sec t="Echeancier (TTC)">
+                    <R l="Versement 1" v={eur(result.prelevement_1)} />
+                    {N(result.prelevement_2) > 0 && <R l="Versement 2" v={eur(result.prelevement_2)} />}
+                    {N(result.prelevement_3) > 0 && <R l="Versement 3" v={eur(result.prelevement_3)} />}
+                    {N(result.prelevement_4) > 0 && <R l="Versement 4" v={eur(result.prelevement_4)} />}
                   </Sec>)}
+
+                {/* 4. Leasing */}
                 {mode === "Leasing" && N(result.loyer) > 0 && (
                   <Sec t="Leasing">
                     <R l="Montant finance" v={eur(result.montant_finance)} />
                     <R l="Loyer" v={eur(result.loyer)} />
                     <R l="Loyer client HT" v={eur(result.loyer_client_ht)} b />
                   </Sec>)}
+
+                {/* 5. Alerte recurrent offert */}
                 {offertsRecurrent.length > 0 && (
                   <div className="border-2 border-red-300 bg-red-50 rounded-lg p-3">
                     <p className="text-sm font-semibold text-red-700">Attention : vous offrez du RECURRENT (mensuel)</p>
@@ -494,6 +496,21 @@ export default function SimulateurClient({
                       {offertsRecurrent.map(a => a.designation).join(", ")} — soit {eur(offertsRecurrent.reduce((s, a) => s + Number(a.prix_vente), 0))}/mois deduits du revenu recurrent. C&apos;est exceptionnel : verifiez que c&apos;est intentionnel.
                     </p>
                   </div>)}
+
+                {/* 6. Infos internes (remises + marge), discretes */}
+                <details className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
+                  <summary className="cursor-pointer font-semibold text-gray-500 uppercase">Detail interne (remises, marge)</summary>
+                  <div className="mt-2 space-y-1">
+                    {(N(result.remise_eur_setup) > 0 || N(result.remise_eur_recurrent) > 0) && (
+                      <>
+                        {N(result.remise_eur_setup) > 0 && <R l="Remise setup" v={`- ${eur(result.remise_eur_setup)}`} />}
+                        {N(result.remise_eur_recurrent) > 0 && <R l="Remise recurrent" v={`- ${eur(result.remise_eur_recurrent)}/mois`} />}
+                      </>
+                    )}
+                    <R l="Marge totale" v={eur(result.marge_totale)} b />
+                  </div>
+                </details>
+
               </div>
             )}
           </div>
@@ -556,18 +573,63 @@ function Sec({ t, children }: { t: string; children: React.ReactNode }) {
 function R({ l, v, b }: { l: string; v: string; b?: boolean }) {
   return (<div className="flex justify-between gap-2"><span className="text-gray-600">{l}</span><span className={`text-right shrink-0 ${b ? "font-semibold" : ""}`}>{v}</span></div>);
 }
+// Carte d'un groupe du recapitulatif (prestation initiale ou abonnement) avec
+// ses lignes et un sous-total HT (net des articles offerts/inclus).
+function CarteRecap({ titre, sousTitre, lignes, suffix = "" }: {
+  titre: string; sousTitre: string; lignes: RecapLigne[]; suffix?: string;
+}) {
+  const sousTotal = lignes.reduce((s, l) => s + (l.offert ? 0 : l.montant), 0);
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-baseline justify-between bg-gray-50 px-3 py-2 border-b border-gray-200">
+        <span className="text-xs font-semibold text-gray-600 uppercase">{titre}</span>
+        <span className="text-[11px] text-gray-400">{sousTitre}</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {lignes.map((l, i) => <LigneRecap key={i} l={l} />)}
+      </div>
+      <div className="flex justify-between px-3 py-2 bg-gray-50 border-t border-gray-200">
+        <span className="text-xs font-medium text-gray-500">Sous-total HT</span>
+        <span className="text-sm font-semibold">{eur(sousTotal)}{suffix}</span>
+      </div>
+    </div>
+  );
+}
+
+function Pastille({ texte, couleur }: { texte: string; couleur: string }) {
+  return <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${couleur}`}>{texte}</span>;
+}
+
 function LigneRecap({ l }: { l: RecapLigne }) {
   return (
-    <div className="flex justify-between gap-2 items-baseline">
+    <div className="flex justify-between gap-2 items-baseline px-3 py-1.5">
       <span className="text-gray-700 min-w-0">
         {l.nom}
         {l.detail && <span className="text-gray-400 text-xs"> ({l.detail})</span>}
-        {l.inclus && <span className="ml-1 text-xs text-green-600 font-medium">Inclus</span>}
-        {l.offert && <span className={`ml-1 text-xs font-medium ${l.recurrent ? "text-red-600" : "text-amber-600"}`}>Offert</span>}
+        {l.inclus && <Pastille texte="Inclus" couleur="bg-green-100 text-green-700" />}
+        {l.offert && <Pastille texte="Offert" couleur={l.recurrent ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"} />}
       </span>
-      <span className={`text-right shrink-0 ${l.offert ? "line-through text-gray-400" : l.inclus ? "text-green-600" : ""}`}>
+      <span className={`text-right shrink-0 ${l.offert ? "line-through text-gray-400" : l.inclus ? "text-green-600" : "text-gray-700"}`}>
         {l.inclus ? "compris" : `${eur(l.montant)}${l.recurrent ? "/mois" : ""}`}
       </span>
+    </div>
+  );
+}
+
+// Bloc total HT -> TVA -> TTC, le TTC mis en avant.
+function BlocTotal({ titre, ht, tva, ttc, suffix = "" }: {
+  titre: string; ht: string; tva: string; ttc: string; suffix?: string;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-gray-500 uppercase mb-1">{titre}</p>
+      <div className="space-y-0.5">
+        <div className="flex justify-between text-xs text-gray-500"><span>Total HT</span><span>{eur(ht)}{suffix}</span></div>
+        <div className="flex justify-between text-xs text-gray-500"><span>TVA 20 %</span><span>{eur(tva)}{suffix}</span></div>
+        <div className="flex justify-between text-base font-bold text-[#1A355E] pt-0.5">
+          <span>Total TTC</span><span>{eur(ttc)}{suffix}</span>
+        </div>
+      </div>
     </div>
   );
 }

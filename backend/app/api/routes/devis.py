@@ -10,7 +10,7 @@ from decimal import Decimal
 from datetime import date, timedelta, datetime, timezone
 
 from app.core.database import get_db
-from app.models.devis import Devis, DevisOptionLigne, DevisArticleOffert, StatutDevis, ModeReglement, PlanPaiement
+from app.models.devis import Devis, DevisLigne, DevisOptionLigne, DevisArticleOffert, StatutDevis, ModeReglement, PlanPaiement
 from app.models.client import Client
 from app.models.offre import Offre
 from app.models.societe import Societe
@@ -43,6 +43,7 @@ class DevisSummary(BaseModel):
     offre_nom: str
     mode_reglement: str
     total_ttc: Decimal
+    version: int = 1
 
     model_config = {"from_attributes": True}
 
@@ -85,6 +86,8 @@ class DevisCreateRequest(BaseModel):
     total_ttc: Decimal = Decimal("0")
     # Options selectionnees
     options: list[dict] = []
+    # Prestations sur mesure (designation, quantite, prix_unitaire_achat, prix_unitaire_vente)
+    prestations: list[dict] = []
     # Articles offerts (designation, prix_achat, prix_vente, est_setup)
     articles_offerts: list[dict] = []
     # Textes
@@ -111,6 +114,9 @@ async def list_devis(
         query = query.where(Devis.archived_at.is_not(None))
     else:
         query = query.where(Devis.archived_at.is_(None))
+    # Ne montrer que la version active de chaque devis (les anciennes versions
+    # restent consultables via le detail, mais pas dans la liste).
+    query = query.where(Devis.version_active.is_(True))
     if statut:
         query = query.where(Devis.statut == statut)
     if q:
@@ -176,6 +182,23 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     if not d:
         raise HTTPException(404, "Devis non trouve")
 
+    # Toutes les versions de la lignee (racine + revisions), pour le bloc "Versions".
+    racine = d.racine_id or d.id
+    versions_rows = (await db.execute(
+        select(Devis)
+        .where((Devis.id == racine) | (Devis.racine_id == racine))
+        .order_by(Devis.version)
+    )).scalars().all()
+    versions = [
+        {
+            "id": v.id, "reference": v.reference, "version": v.version,
+            "statut": v.statut.value, "active": v.version_active,
+            "date_emission": v.date_emission.isoformat(),
+            "total_ttc": str(v.total_ttc),
+        }
+        for v in versions_rows
+    ]
+
     recurrent_ht = montant_recurrent_ht(d)
     periode_due = await prochaine_periode(db, d)
     maintenance = {
@@ -196,6 +219,9 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         "id": d.id,
         "reference": d.reference,
         "statut": d.statut.value,
+        "version": d.version,
+        "version_active": d.version_active,
+        "versions": versions,
         "date_emission": d.date_emission.isoformat(),
         "date_validite": d.date_validite.isoformat(),
         "date_mise_en_ligne": d.date_mise_en_ligne.isoformat() if d.date_mise_en_ligne else None,
@@ -252,6 +278,195 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
             if f.archived_at is None
         ],
     }
+
+
+@router.get("/{devis_id}/edition")
+async def edition_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Retourne l'etat du devis sous une forme directement reexploitable par le
+    simulateur (pour rouvrir et modifier le devis). Reconstitue les quantites
+    d'options, le pack, les prestations, les remises/mode/plan et les cases
+    "Offrir" (par correspondance de designation avec les articles offerts).
+    """
+    result = await db.execute(
+        select(Devis)
+        .where(Devis.id == devis_id)
+        .options(
+            selectinload(Devis.lignes),
+            selectinload(Devis.options),
+            selectinload(Devis.articles_offerts),
+        )
+    )
+    d = result.scalar_one_or_none()
+    if not d:
+        raise HTTPException(404, "Devis non trouve")
+
+    offerts_noms = {(a.designation or "").strip() for a in d.articles_offerts}
+
+    options = []
+    pack_id = None
+    offrir_option_ids = []
+    for o in sorted(d.options, key=lambda x: x.ordre):
+        if o.type_ligne == "PACK":
+            pack_id = o.option_id
+        else:
+            options.append({"option_id": o.option_id, "quantite": o.quantite, "inclus": o.inclus})
+        if (o.nom or "").strip() in offerts_noms:
+            offrir_option_ids.append(o.option_id)
+
+    prestations = [
+        {
+            "nom": lg.designation,
+            "qty": str(lg.quantite),
+            "achat": str(lg.prix_unitaire_achat),
+            "vente": str(lg.prix_unitaire_vente),
+            "offrir": (lg.designation or "").strip() in offerts_noms,
+        }
+        for lg in sorted(d.lignes, key=lambda x: x.ordre)
+    ]
+
+    def pct(v):
+        return str((v * Decimal("100")).quantize(Decimal("0.01")).normalize())
+
+    return {
+        "id": d.id,
+        "statut": d.statut.value,
+        "offre_id": d.offre_id,
+        "client_id": d.client_id,
+        "mode": d.mode_reglement.value,
+        "plan": d.plan_paiement.value if d.plan_paiement else "100%",
+        "remise_setup": pct(d.remise_pct_setup),
+        "remise_recurrent": pct(d.remise_pct_recurrent),
+        "marge_add": str(d.marge_additionnelle),
+        "pack_id": pack_id,
+        "options": options,
+        "offrir_option_ids": offrir_option_ids,
+        "prestations": prestations,
+    }
+
+
+def _reference_version(reference_base: str, version: int) -> str:
+    """Construit la reference d'une version : base pour V1, base-V{n} ensuite.
+
+    Tolere une reference deja suffixee (ex: une ancienne -V2) en repartant de la base.
+    """
+    base = reference_base.split("-V")[0] if "-V" in reference_base else reference_base
+    return base if version <= 1 else f"{base}-V{version}"
+
+
+@router.post("/{devis_id}/reviser", response_model=DevisSummary, status_code=201)
+async def reviser_devis(devis_id: int, data: DevisCreateRequest, db: AsyncSession = Depends(get_db)):
+    """Enregistre une modification d'un devis existant.
+
+    - Si le devis est en BROUILLON : il est mis a jour sur place (pas de nouvelle
+      version ; le brouillon est librement modifiable).
+    - Sinon (envoye/accepte/refuse/expire) : une NOUVELLE VERSION est creee
+      (V+1), l'ancienne est conservee en lecture seule (version_active=False).
+      La nouvelle version repart en BROUILLON.
+
+    Garde-fou : on ne revise jamais une version qui n'est plus active (il faut
+    repartir de la version courante).
+    """
+    ancien = await db.get(Devis, devis_id)
+    if not ancien:
+        raise HTTPException(404, "Devis non trouve")
+    if not ancien.version_active:
+        raise HTTPException(400, "Cette version n'est plus active. Revisez la version courante.")
+    if ancien.archived_at is not None:
+        raise HTTPException(400, "Devis archive : restaurez-le avant de le modifier.")
+
+    client = await db.get(Client, data.client_id)
+    if not client:
+        raise HTTPException(404, "Client non trouve")
+    offre = await db.get(Offre, data.offre_id)
+    if not offre:
+        raise HTTPException(404, "Offre non trouvee")
+
+    mode = ModeReglement.LEASING if data.mode_reglement == "Leasing" else ModeReglement.COMPTANT
+    plan = _PLAN_MAP.get(data.plan_paiement)
+
+    # --- Cas 1 : brouillon -> mise a jour sur place ---
+    if ancien.statut == StatutDevis.BROUILLON:
+        # Purger les lignes filles existantes, puis les reconstruire a l'identique
+        # de ce que le simulateur envoie.
+        await db.execute(
+            DevisOptionLigne.__table__.delete().where(DevisOptionLigne.devis_id == ancien.id)
+        )
+        await db.execute(
+            DevisLigne.__table__.delete().where(DevisLigne.devis_id == ancien.id)
+        )
+        await db.execute(
+            DevisArticleOffert.__table__.delete().where(DevisArticleOffert.devis_id == ancien.id)
+        )
+        _appliquer_champs(ancien, data, client, offre, mode, plan)
+        await db.flush()
+        _remplir_lignes(db, ancien.id, data)
+        await db.commit()
+        await db.refresh(ancien)
+        return ancien
+
+    # --- Cas 2 : devis deja transmis -> nouvelle version ---
+    racine_id = ancien.racine_id or ancien.id
+    nouvelle_version = ancien.version + 1
+    reference = _reference_version(ancien.reference, nouvelle_version)
+
+    nouveau = Devis(
+        reference=reference,
+        racine_id=racine_id,
+        version=nouvelle_version,
+        version_active=True,
+        statut=StatutDevis.BROUILLON,
+        date_emission=date.today(),
+        date_validite=date.today() + timedelta(days=30),
+        client_id=client.id,
+    )
+    _appliquer_champs(nouveau, data, client, offre, mode, plan)
+    db.add(nouveau)
+    ancien.version_active = False
+    await db.flush()
+    _remplir_lignes(db, nouveau.id, data)
+    await db.commit()
+    await db.refresh(nouveau)
+    return nouveau
+
+
+def _appliquer_champs(devis: Devis, data: "DevisCreateRequest", client, offre, mode, plan) -> None:
+    """Applique les champs d'une requete sur un devis (snapshot client/offre + prix)."""
+    devis.client_id = client.id
+    devis.client_raison_sociale = client.raison_sociale
+    devis.client_adresse = client.adresse
+    devis.client_cp = client.code_postal
+    devis.client_ville = client.ville
+    devis.client_interlocuteur = client.interlocuteur
+    devis.client_telephone = client.telephone
+    devis.client_email = client.email
+    devis.client_siret = client.siret
+    devis.offre_id = offre.id
+    devis.offre_nom = offre.nom
+    devis.offre_type_site = offre.type_site
+    devis.offre_prix_catalogue = offre.tarif_vente_conseille
+    devis.mode_reglement = mode
+    devis.plan_paiement = plan
+    devis.prix_vente_final = data.prix_vente_final
+    devis.total_prestations_ht = data.total_prestations_ht
+    devis.total_options_setup_ht = data.total_options_setup_ht
+    devis.total_pack_maintenance_ht = data.total_pack_maintenance_ht
+    devis.total_options_recurrent_ht = data.total_options_recurrent_ht
+    devis.total_offerts_recurrent_ht = data.total_offerts_recurrent_ht
+    devis.remise_pct_setup = data.remise_pct_setup
+    devis.remise_pct_recurrent = data.remise_pct_recurrent
+    devis.remise_eur_setup = data.remise_eur_setup
+    devis.remise_eur_recurrent = data.remise_eur_recurrent
+    devis.marge_additionnelle = data.marge_additionnelle
+    devis.duree_financement_mois = data.duree_financement_mois
+    devis.coefficient_locam = data.coefficient_locam
+    devis.pct_maintenance_locam = data.pct_maintenance_locam
+    devis.garantie_web = data.garantie_web
+    devis.montant_finance = data.montant_finance
+    devis.loyer_mensuel = data.loyer_mensuel
+    devis.total_ht = data.total_ht
+    devis.total_tva = data.total_tva
+    devis.total_ttc = data.total_ttc
+    devis.commercial = data.commercial
 
 
 @router.patch("/{devis_id}/statut", response_model=DevisSummary)
@@ -591,10 +806,21 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
     db.add(devis)
     await db.flush()
 
-    # Sauvegarder les options selectionnees
+    _remplir_lignes(db, devis.id, data)
+
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
+def _remplir_lignes(db: AsyncSession, devis_id: int, data: "DevisCreateRequest") -> None:
+    """Cree les lignes filles d'un devis (options, prestations, articles offerts)
+    a partir d'une requete. Mutualise entre creation et revision (nouvelle version).
+    """
+    # Options selectionnees
     for opt_data in data.options:
-        opt_ligne = DevisOptionLigne(
-            devis_id=devis.id,
+        db.add(DevisOptionLigne(
+            devis_id=devis_id,
             option_id=opt_data.get("option_id", 0),
             code=opt_data.get("code", ""),
             nom=opt_data.get("nom", ""),
@@ -603,22 +829,31 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
             prix_setup_ht=Decimal(str(opt_data.get("prix_setup_ht", 0))),
             prix_mensuel_ht=Decimal(str(opt_data.get("prix_mensuel_ht", 0))),
             inclus=opt_data.get("inclus", False),
-        )
-        db.add(opt_ligne)
+        ))
 
-    # Sauvegarder les articles offerts (options/prestations offertes)
+    # Prestations sur mesure (etaient perdues auparavant : seul le total etait stocke)
+    for idx, p_data in enumerate(data.prestations):
+        designation = (p_data.get("designation") or "").strip()
+        if not designation:
+            continue
+        db.add(DevisLigne(
+            devis_id=devis_id,
+            ordre=idx,
+            designation=designation,
+            quantite=int(p_data.get("quantite", 1) or 1),
+            prix_unitaire_achat=Decimal(str(p_data.get("prix_unitaire_achat", 0))),
+            prix_unitaire_vente=Decimal(str(p_data.get("prix_unitaire_vente", 0))),
+        ))
+
+    # Articles offerts (options/prestations offertes)
     for idx, art_data in enumerate(data.articles_offerts):
         designation = (art_data.get("designation") or "").strip()
         if not designation:
             continue
         db.add(DevisArticleOffert(
-            devis_id=devis.id,
+            devis_id=devis_id,
             ordre=idx,
             designation=designation,
             prix_achat=Decimal(str(art_data.get("prix_achat", 0))),
             prix_vente=Decimal(str(art_data.get("prix_vente", 0))),
         ))
-
-    await db.commit()
-    await db.refresh(devis)
-    return devis

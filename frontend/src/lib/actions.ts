@@ -259,6 +259,10 @@ export async function saveDevis(formData: FormData) {
   const optionsJson = formData.get("options_json") as string;
   const options = optionsJson ? JSON.parse(optionsJson) : [];
 
+  // Prestations sur mesure (persistees dans le devis)
+  const prestationsJson = formData.get("prestations_json") as string;
+  const prestations = prestationsJson ? JSON.parse(prestationsJson) : [];
+
   // Articles offerts (options/prestations offertes)
   const articlesJson = formData.get("articles_offerts_json") as string;
   const articles_offerts: Array<Record<string, unknown>> = articlesJson ? JSON.parse(articlesJson) : [];
@@ -301,6 +305,12 @@ export async function saveDevis(formData: FormData) {
       prix_mensuel_ht: o.prix_vente_mensuel || "0",
       inclus: o.statut === "Inclus",
     })),
+    prestations: prestations.map((p: Record<string, unknown>) => ({
+      designation: p.designation,
+      quantite: p.quantite,
+      prix_unitaire_achat: p.prix_unitaire_achat || "0",
+      prix_unitaire_vente: p.prix_unitaire_vente || "0",
+    })),
     articles_offerts: articles_offerts.map((a) => ({
       designation: a.designation,
       prix_achat: a.prix_achat || "0",
@@ -309,6 +319,14 @@ export async function saveDevis(formData: FormData) {
     })),
   };
 
+  // Edition d'un devis existant : on revise (le backend decide maj sur place
+  // si brouillon, ou nouvelle version si deja transmis). Sinon creation.
+  const devisId = formData.get("devis_id") as string;
+  if (devisId) {
+    // Peut renvoyer un nouvel id (nouvelle version) ou le meme (maj brouillon).
+    const revise = await serverPost<{ id: number }>(`/devis/${devisId}/reviser`, data);
+    redirect(`/devis/detail?id=${revise.id}`);
+  }
   await serverPost("/devis/", data);
   redirect("/devis");
 }

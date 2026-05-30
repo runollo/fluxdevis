@@ -34,6 +34,23 @@ export interface OffreS {
 interface Presta { nom: string; qty: string; achat: string; vente: string; offrir: boolean; }
 type Result = Record<string, string>;
 
+// Etat initial de reedition d'un devis existant (renvoye par GET /devis/{id}/edition).
+export interface EditionInitial {
+  id: number;
+  statut: string;
+  offre_id: number;
+  client_id: number;
+  mode: string;
+  plan: string;
+  remise_setup: string;
+  remise_recurrent: string;
+  marge_add: string;
+  pack_id: number | null;
+  options: Array<{ option_id: number; quantite: number; inclus: boolean }>;
+  offrir_option_ids: number[];
+  prestations: Array<{ nom: string; qty: string; achat: string; vente: string; offrir: boolean }>;
+}
+
 interface RecapLigne {
   nom: string; detail?: string; montant: number;
   recurrent: boolean; inclus: boolean; offert: boolean;
@@ -42,32 +59,49 @@ interface RecapLigne {
 const PRESTA_VIDE: Presta = { nom: "", qty: "1", achat: "", vente: "", offrir: false };
 
 export default function SimulateurClient({
-  offre, options, clients,
-}: { offre: OffreS; options: OptS[]; clients: Client[] }) {
+  offre, options, clients, initial,
+}: { offre: OffreS; options: OptS[]; clients: Client[]; initial?: EditionInitial | null }) {
   const packs = options.filter(o => o.type_ligne === "PACK");
   const others = options.filter(o => o.type_ligne !== "PACK");
   const cats = new Map<string, OptS[]>();
   for (const o of others) { if (!cats.has(o.categorie)) cats.set(o.categorie, []); cats.get(o.categorie)!.push(o); }
 
+  // Prefill depuis un devis existant (reedition), sinon valeurs par defaut.
+  const initQty: Record<number, number> = {};
+  const initOffrir: Record<number, boolean> = {};
+  if (initial) {
+    for (const o of initial.options) if (!o.inclus) initQty[o.option_id] = o.quantite;
+    for (const id of initial.offrir_option_ids) initOffrir[id] = true;
+  }
+  const initPrestas: Presta[] = [{ ...PRESTA_VIDE }, { ...PRESTA_VIDE }, { ...PRESTA_VIDE }];
+  if (initial) {
+    initial.prestations.slice(0, 3).forEach((p, i) => {
+      initPrestas[i] = { nom: p.nom, qty: p.qty, achat: p.achat, vente: p.vente, offrir: p.offrir };
+    });
+  }
+
   // --- Etat du formulaire ---
-  const [mode, setMode] = useState("Comptant");
-  const [plan, setPlan] = useState("100%");
-  const [remiseSetup, setRemiseSetup] = useState("0");
-  const [remiseRecurrent, setRemiseRecurrent] = useState("0");
-  const [margeAdd, setMargeAdd] = useState("0");
+  const [mode, setMode] = useState(initial?.mode ?? "Comptant");
+  const [plan, setPlan] = useState(initial?.plan ?? "100%");
+  const [remiseSetup, setRemiseSetup] = useState(initial?.remise_setup ?? "0");
+  const [remiseRecurrent, setRemiseRecurrent] = useState(initial?.remise_recurrent ?? "0");
+  const [margeAdd, setMargeAdd] = useState(initial?.marge_add ?? "0");
   // Leasing
   const [duree, setDuree] = useState("");
   const [coeff, setCoeff] = useState("3.20");
   const [pctMaint, setPctMaint] = useState("30");
   const [garantie, setGarantie] = useState("10");
   // Selections
-  const [qty, setQty] = useState<Record<number, number>>({});
-  const [packId, setPackId] = useState<number | null>(null);
-  const [offrir, setOffrir] = useState<Record<number, boolean>>({});
-  const [prestas, setPrestas] = useState<Presta[]>([{ ...PRESTA_VIDE }, { ...PRESTA_VIDE }, { ...PRESTA_VIDE }]);
+  const [qty, setQty] = useState<Record<number, number>>(initQty);
+  const [packId, setPackId] = useState<number | null>(initial?.pack_id ?? null);
+  const [offrir, setOffrir] = useState<Record<number, boolean>>(initOffrir);
+  const [prestas, setPrestas] = useState<Presta[]>(initPrestas);
   // Resultat
   const [result, setResult] = useState<Result | null>(null);
   const [calcul, setCalcul] = useState(false);
+
+  const edition = !!initial;
+  const creerNouvelleVersion = edition && initial!.statut !== "brouillon";
 
   const setQ = (id: number, v: number) => setQty(p => ({ ...p, [id]: v }));
   const setOff = (id: number, v: boolean) => setOffrir(p => ({ ...p, [id]: v }));
@@ -216,6 +250,14 @@ export default function SimulateurClient({
       option_id: o.id, code: o.code, nom: o.nom, type_ligne: o.type_ligne,
       quantite: o.statut === "Inclus" ? 1 : (o.type_ligne === "PACK" ? 1 : (qty[o.id] || 0)),
       statut: o.statut, prix_vente_setup: o.vente_setup, prix_vente_mensuel: o.vente_mensuel,
+    }));
+
+  // Prestations sur mesure a persister dans le devis (etaient perdues avant).
+  const prestationsPourDevis = prestas
+    .filter(pr => pr.nom && N(pr.qty) > 0 && N(pr.vente) > 0)
+    .map(pr => ({
+      designation: pr.nom, quantite: N(pr.qty),
+      prix_unitaire_achat: pr.achat || "0", prix_unitaire_vente: pr.vente || "0",
     }));
 
   return (
@@ -459,8 +501,17 @@ export default function SimulateurClient({
           {/* Enregistrer le devis */}
           {result && (
             <div className="bg-white border-2 border-green-200 rounded-lg p-4 mt-4">
-              <h2 className="text-sm font-semibold text-green-800 uppercase mb-3">Enregistrer ce devis</h2>
+              <h2 className="text-sm font-semibold text-green-800 uppercase mb-3">
+                {edition ? (creerNouvelleVersion ? "Enregistrer une nouvelle version" : "Enregistrer les modifications") : "Enregistrer ce devis"}
+              </h2>
+              {creerNouvelleVersion && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 mb-3">
+                  Ce devis a deja ete transmis : l&apos;enregistrement creera une nouvelle version
+                  (l&apos;actuelle sera conservee en lecture seule).
+                </p>
+              )}
               <form action={saveDevis}>
+                {edition && <input type="hidden" name="devis_id" value={initial!.id} />}
                 <input type="hidden" name="offre_id" value={offre.id} />
                 <input type="hidden" name="mode" value={mode} />
                 <input type="hidden" name="plan" value={plan} />
@@ -469,10 +520,12 @@ export default function SimulateurClient({
                 <input type="hidden" name="marge_add" value={margeAdd} />
                 <input type="hidden" name="result_json" value={JSON.stringify(result)} />
                 <input type="hidden" name="options_json" value={JSON.stringify(optionsPourDevis)} />
+                <input type="hidden" name="prestations_json" value={JSON.stringify(prestationsPourDevis)} />
                 <input type="hidden" name="articles_offerts_json" value={JSON.stringify(articlesOfferts)} />
                 <div className="mb-3">
                   <label className="block text-sm font-medium mb-1">Client</label>
-                  <select name="client_id" required className="w-full border rounded px-3 py-2.5 text-sm">
+                  <select name="client_id" required defaultValue={initial?.client_id ?? ""}
+                    className="w-full border rounded px-3 py-2.5 text-sm">
                     <option value="">-- Choisir le client --</option>
                     {clients.map(c => (
                       <option key={c.id} value={c.id}>{c.raison_sociale}{c.ville ? ` (${c.ville})` : ""}</option>
@@ -486,7 +539,7 @@ export default function SimulateurClient({
                   </label>
                 )}
                 <button type="submit" className="w-full py-3 bg-green-700 text-white rounded-lg font-medium text-sm">
-                  Enregistrer le devis
+                  {edition ? (creerNouvelleVersion ? "Creer la nouvelle version" : "Enregistrer les modifications") : "Enregistrer le devis"}
                 </button>
               </form>
             </div>

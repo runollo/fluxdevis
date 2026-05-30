@@ -42,7 +42,16 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "devis"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    reference: Mapped[str] = mapped_column(String(20), unique=True, index=True)
+    reference: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+
+    # Versioning : un meme devis peut etre revise plusieurs fois (negociation).
+    # - racine_id : id du tout premier devis de la lignee (None pour la racine elle-meme).
+    # - version : 1, 2, 3... (la reference porte le suffixe -V2, -V3 a partir de la V2).
+    # - version_active : seule la derniere version est active ; les precedentes restent
+    #   consultables en lecture seule mais masquees des listes par defaut.
+    racine_id: Mapped[int | None] = mapped_column(ForeignKey("devis.id"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    version_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     # Statut
     statut: Mapped[StatutDevis] = mapped_column(

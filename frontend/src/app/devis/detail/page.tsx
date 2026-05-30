@@ -21,8 +21,13 @@ interface Maintenance {
   recurrent_ht: string; recurrent_ttc: string; a_facturer: boolean; leasing: boolean;
   periode_due: { debut: string; fin: string; montant_ttc: string } | null;
 }
+interface VersionInfo {
+  id: number; reference: string; version: number;
+  statut: string; active: boolean; date_emission: string; total_ttc: string;
+}
 interface DevisDetail {
   id: number; reference: string; statut: string;
+  version: number; version_active: boolean; versions: VersionInfo[];
   date_emission: string; date_validite: string; date_mise_en_ligne: string | null;
   maintenance: Maintenance;
   client_raison_sociale: string; client_adresse: string | null;
@@ -138,6 +143,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           </button>
         </form>
         <div className="flex-1" />
+        {d.version_active && (
+          <Link href={`/devis/editer?id=${d.id}`}
+            className="px-4 py-2 bg-amber-600 text-white rounded text-sm font-medium text-center">
+            Modifier
+          </Link>
+        )}
         <a href={`/api/devis/${d.id}/document`}
           className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium text-center">
           Telecharger le devis (Word)
@@ -156,6 +167,36 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           Supprimer ce devis
         </Link>
       </div>
+
+      {/* Versions du devis (si plusieurs) */}
+      {d.versions && d.versions.length > 1 && (
+        <div className="bg-white border rounded-lg p-4 mb-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+            Versions de ce devis ({d.versions.length})
+          </h2>
+          <div className="space-y-1">
+            {d.versions.map((v) => (
+              <div key={v.id}
+                className={`flex items-center justify-between gap-3 p-2 rounded text-sm ${v.id === d.id ? "bg-amber-50 border border-amber-200" : "hover:bg-gray-50"}`}>
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-medium">V{v.version}</span>
+                  <span className="text-gray-500 font-mono truncate">{v.reference}</span>
+                  {v.active
+                    ? <span className="text-xs text-green-600 font-medium">active</span>
+                    : <span className="text-xs text-gray-400">lecture seule</span>}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-gray-500">{eur(v.total_ttc)}</span>
+                  {v.id === d.id
+                    ? <span className="text-xs text-gray-400">affichee</span>
+                    : <Link href={`/devis/detail?id=${v.id}`} className="text-[#1A355E] hover:underline text-xs">Voir</Link>}
+                  <a href={`/api/devis/${v.id}/document`} className="text-[#1A355E] hover:underline text-xs">Word</a>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Client */}

@@ -18,6 +18,16 @@ interface OptS {
   statut: string; commentaire: string | null;
 }
 
+// Ligne du recapitulatif du devis (panier) affichee dans les resultats.
+interface RecapLigne {
+  nom: string;
+  detail?: string;   // ex "2 x 95,00 EUR"
+  montant: number;   // total de la ligne (brut)
+  recurrent: boolean; // true => /mois (abonnement)
+  inclus: boolean;    // option incluse dans l'offre (0 EUR)
+  offert: boolean;    // ligne offerte (deduite du total)
+}
+
 type Result = Record<string, string>;
 
 export default async function SimulateurPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
@@ -89,6 +99,49 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
     }
   }
   const offertsRecurrent = articlesOfferts.filter(a => !a.est_setup);
+
+  // Recapitulatif du devis (panier) : reconstruit ligne par ligne depuis l'etat URL,
+  // pour que l'utilisateur voie exactement ce qui est dans le devis sans remonter
+  // dans la liste des options. Les lignes offertes sont marquees (barrees + "Offert").
+  const recap: RecapLigne[] = [];
+  if (offre) {
+    recap.push({
+      nom: offre.nom, montant: Number(offre.tarif_vente_conseille),
+      recurrent: false, inclus: false, offert: false,
+    });
+  }
+  for (let i = 1; i <= 3; i++) {
+    const nom = p[`presta_${i}_nom`];
+    const qty = N(p[`presta_${i}_qty`]);
+    const pv = N(p[`presta_${i}_vente`]);
+    if (nom && qty > 0 && pv > 0) {
+      recap.push({
+        nom, detail: qty > 1 ? `${qty} x ${eur(pv)}` : undefined, montant: qty * pv,
+        recurrent: false, inclus: false, offert: p[`offrir_presta_${i}`] === "1",
+      });
+    }
+  }
+  for (const o of others) {
+    const incl = o.statut === "Inclus";
+    const qty = incl ? 1 : N(p[`opt_${o.id}`]);
+    if (qty <= 0) continue;
+    const est_setup = o.type_ligne === "OPTION_SETUP";
+    const pu = Number(est_setup ? o.vente_setup : o.vente_mensuel);
+    recap.push({
+      nom: o.nom, detail: qty > 1 ? `${qty} x ${eur(pu)}` : undefined, montant: pu * qty,
+      recurrent: !est_setup, inclus: incl, offert: p[`offrir_${o.id}`] === "1",
+    });
+  }
+  for (const pk of packs) {
+    if (p.pack_id === String(pk.id)) {
+      recap.push({
+        nom: pk.nom, montant: Number(pk.vente_mensuel),
+        recurrent: true, inclus: false, offert: p[`offrir_${pk.id}`] === "1",
+      });
+    }
+  }
+  const recapSetup = recap.filter(l => !l.recurrent);
+  const recapRecurrent = recap.filter(l => l.recurrent);
 
   if (error && !offres.length) return <p className="text-red-600 p-4">Erreur : {error}</p>;
 
@@ -303,15 +356,29 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
             <h2 className="text-lg font-semibold mb-4">Resultats</h2>
             {!result ? <p className="text-gray-400 text-sm">Cliquez Simuler pour voir les resultats.</p> : (
               <div className="space-y-3 text-sm">
-                <Sec t="Prix"><R l="Prix vente final HT" v={eur(result.prix_vente_final)} b /><R l="Setup affiche HT" v={eur(result.prix_setup_affiche)} /><R l="Mensuel affiche HT" v={eur(result.prix_mensuel_affiche)} /></Sec>
-                <Sec t="Totaux TTC"><R l="Setup TTC" v={eur(result.total_setup_ttc)} b /><R l="Mensuel TTC" v={eur(result.total_mensuel_ttc)} /></Sec>
-                {(N(result.total_prestations_vente) > 0 || N(result.total_options_setup_vente) > 0 || N(result.total_pack_maintenance_vente) > 0) && (
-                  <Sec t="Detail">
-                    {N(result.total_prestations_vente) > 0 && <R l="Prestations" v={eur(result.total_prestations_vente)} />}
-                    {N(result.total_options_setup_vente) > 0 && <R l="Options setup" v={eur(result.total_options_setup_vente)} />}
-                    {N(result.total_pack_maintenance_vente) > 0 && <R l="Pack maintenance" v={eur(result.total_pack_maintenance_vente)} />}
-                    {N(result.total_options_recurrent_vente) > 0 && <R l="Options recurrentes" v={eur(result.total_options_recurrent_vente)} />}
-                  </Sec>)}
+                {recap.length > 0 && (
+                  <div>
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase mb-2">Recapitulatif du devis</h3>
+                    {recapSetup.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase">Prestation initiale (one-shot)</p>
+                        {recapSetup.map((l, i) => <LigneRecap key={`s${i}`} l={l} />)}
+                      </div>
+                    )}
+                    {recapRecurrent.length > 0 && (
+                      <div className="space-y-1 mt-3">
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase">Abonnement mensuel</p>
+                        {recapRecurrent.map((l, i) => <LigneRecap key={`r${i}`} l={l} />)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                <Sec t="Totaux nets">
+                  <R l="Setup affiche HT" v={eur(result.prix_setup_affiche)} b />
+                  <R l="Setup TTC" v={eur(result.total_setup_ttc)} b />
+                  {N(result.prix_mensuel_affiche) > 0 && <R l="Mensuel affiche HT" v={eur(result.prix_mensuel_affiche)} />}
+                  {N(result.total_mensuel_ttc) > 0 && <R l="Mensuel TTC" v={eur(result.total_mensuel_ttc)} />}
+                </Sec>
                 <Sec t="Remises"><R l="Remise setup" v={eur(result.remise_eur_setup)} /><R l="Remise recurrent" v={eur(result.remise_eur_recurrent)} /></Sec>
                 <Sec t="Marge"><R l="Marge" v={eur(result.marge)} /><R l="Marge totale" v={eur(result.marge_totale)} b /></Sec>
                 {mode === "Comptant" && N(result.prelevement_1) > 0 && (
@@ -327,12 +394,6 @@ export default async function SimulateurPage({ searchParams }: { searchParams: P
                     <R l="Montant finance" v={eur(result.montant_finance)} />
                     <R l="Loyer" v={eur(result.loyer)} />
                     <R l="Loyer client HT" v={eur(result.loyer_client_ht)} b />
-                  </Sec>)}
-                {articlesOfferts.length > 0 && (
-                  <Sec t="Articles offerts">
-                    {articlesOfferts.map((a, i) => (
-                      <R key={i} l={`${a.designation}${a.est_setup ? "" : " (recur.)"}`} v={`- ${eur(a.prix_vente)}${a.est_setup ? "" : "/mois"}`} />
-                    ))}
                   </Sec>)}
                 {offertsRecurrent.length > 0 && (
                   <div className="border-2 border-red-300 bg-red-50 rounded-lg p-3">
@@ -399,4 +460,19 @@ function Sec({ t, children }: { t: string; children: React.ReactNode }) {
 }
 function R({ l, v, b }: { l: string; v: string; b?: boolean }) {
   return (<div className="flex justify-between gap-2"><span className="text-gray-600">{l}</span><span className={`text-right shrink-0 ${b ? "font-semibold" : ""}`}>{v}</span></div>);
+}
+function LigneRecap({ l }: { l: RecapLigne }) {
+  return (
+    <div className="flex justify-between gap-2 items-baseline">
+      <span className="text-gray-700 min-w-0">
+        {l.nom}
+        {l.detail && <span className="text-gray-400 text-xs"> ({l.detail})</span>}
+        {l.inclus && <span className="ml-1 text-xs text-green-600 font-medium">Inclus</span>}
+        {l.offert && <span className={`ml-1 text-xs font-medium ${l.recurrent ? "text-red-600" : "text-amber-600"}`}>Offert</span>}
+      </span>
+      <span className={`text-right shrink-0 ${l.offert ? "line-through text-gray-400" : l.inclus ? "text-green-600" : ""}`}>
+        {l.inclus ? "compris" : `${eur(l.montant)}${l.recurrent ? "/mois" : ""}`}
+      </span>
+    </div>
+  );
 }

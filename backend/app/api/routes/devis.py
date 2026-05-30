@@ -325,7 +325,14 @@ async def edition_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     ]
 
     def pct(v):
-        return str((v * Decimal("100")).quantize(Decimal("0.01")).normalize())
+        # Les remises sont DEJA stockees en pourcentage (ex 30.00 = 30 %), comme
+        # attendu par le champ "Remise %" du simulateur. Ne pas multiplier par 100
+        # (sinon 30 -> 3000) ni normaliser (qui produit "3E+3"). On retire juste
+        # les zeros decimaux superflus : 30.00 -> "30", 12.50 -> "12.5".
+        s = format(v, "f")
+        if "." in s:
+            s = s.rstrip("0").rstrip(".")
+        return s or "0"
 
     return {
         "id": d.id,

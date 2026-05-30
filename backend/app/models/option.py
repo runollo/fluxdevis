@@ -53,9 +53,21 @@ class Option(Base, TimestampMixin):
     inclusions: Mapped[list["OptionInclusion"]] = relationship(back_populates="option")
 
     def recalculer_prix(self):
-        """Recalcule les 4 prix derives a partir des donnees source."""
+        """Recalcule les 4 prix derives, a l'identique des formules du catalogue
+        Excel (donnees_catalogue.xlsx, feuille Options).
+
+        Formules Excel :
+          setup_achat   = prix_heure * heures_setup                         (X*V)
+          mensuel_achat = prix_heure * heures_mensuel + prix_hebergement    (X*W+U)
+          vente_setup   = setup_achat   * (1 + taux_marge)                  (E*(1+G))
+          vente_mensuel = mensuel_achat * (1 + taux_marge)                  (F*(1+G))
+
+        Le terme + prix_hebergement sur le cout mensuel est essentiel pour les
+        packs de maintenance Webflow (hebergement 31 EUR/mois inclus) ; il etait
+        omis auparavant, ce qui sous-evaluait fortement la maintenance.
+        """
         self.setup_achat = self.prix_heure * self.heures_setup
-        self.mensuel_achat = self.prix_heure * self.heures_mensuel
+        self.mensuel_achat = self.prix_heure * self.heures_mensuel + self.prix_hebergement
         self.vente_setup = self.setup_achat * (1 + self.taux_marge)
         self.vente_mensuel = self.mensuel_achat * (1 + self.taux_marge)
 

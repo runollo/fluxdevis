@@ -9,7 +9,7 @@
 // Le tarif_vente_conseille reste saisissable (on peut s'ecarter du theorique) ;
 // l'apercu montre alors la marge reelle obtenue sur le prix saisi.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { saveOffre } from "@/lib/actions";
 import type { Offre } from "@/lib/api";
@@ -22,16 +22,33 @@ function N(v: string) { return Number(v || 0); }
 export default function OffreForm({ offre }: { offre: Offre | null }) {
   const [tarifAchat, setTarifAchat] = useState(String(offre?.tarif_achat ?? "0"));
   const [tauxMarge, setTauxMarge] = useState(String(offre?.taux_marge ?? "0.30"));
+  const [venteConseille, setVenteConseille] = useState(String(offre?.tarif_vente_conseille ?? "0"));
   const [commission, setCommission] = useState(String(offre?.commission_apporteur ?? "0"));
 
-  // Calculs live (formule du catalogue Excel) :
-  //   tarif_vente_conseille = tarif_achat * (1 + taux_marge)
-  // Le tarif conseille est CALCULE (pas saisi), comme dans la feuille Excel.
+  // Tarif conseille = achat x (1 + marge) AUTO, mais surchargeable : des que
+  // l'utilisateur saisit un prix a la main (prix rond), sa valeur est respectee
+  // et n'est plus ecrasee par le recalcul. Si l'offre chargee a deja un prix
+  // qui s'ecarte du theorique, on demarre en mode "force" pour ne pas l'ecraser.
+  const achatInit = N(String(offre?.tarif_achat ?? "0"));
+  const theoriqueInit = achatInit * (1 + N(String(offre?.taux_marge ?? "0.30")));
+  const [manuel, setManuel] = useState(
+    !!offre && Math.abs(N(String(offre.tarif_vente_conseille ?? "0")) - theoriqueInit) > 0.01
+  );
   const achat = N(tarifAchat);
-  const vente = achat * (1 + N(tauxMarge));
+  const venteTheorique = achat * (1 + N(tauxMarge));
+
+  // Recalcul auto du conseille tant que l'utilisateur ne l'a pas force.
+  useEffect(() => {
+    if (!manuel) setVenteConseille(venteTheorique.toFixed(2));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tarifAchat, tauxMarge, manuel]);
+
+  const vente = N(venteConseille);
   const margeBrute = vente - achat;
-  const margePct = Math.round(N(tauxMarge) * 100);
+  const margePct = achat > 0 ? Math.round((margeBrute / achat) * 100) : 0;
+  const margePctTheorique = Math.round(N(tauxMarge) * 100);
   const margeNette = margeBrute - N(commission);
+  const ecartTheorique = vente - venteTheorique;
 
   const title = offre ? `Modifier : ${offre.nom}` : "Nouvelle offre";
 
@@ -68,32 +85,46 @@ export default function OffreForm({ offre }: { offre: Offre | null }) {
             <Num label="Tarif achat HT" name="tarif_achat" value={tarifAchat} onChange={setTarifAchat} />
             <Num label="Taux marge" name="taux_marge" value={tauxMarge} onChange={setTauxMarge} />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tarif vente conseille HT</label>
-              <input type="text" readOnly tabIndex={-1}
-                value={eur(vente)}
-                className="w-full border rounded px-3 py-2.5 text-sm bg-gray-50 font-semibold text-gray-800" />
-              {/* Valeur calculee envoyee au backend */}
-              <input type="hidden" name="tarif_vente_conseille" value={vente.toFixed(2)} />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tarif vente conseille HT
+                {manuel
+                  ? <span className="ml-1 text-[11px] text-amber-600">(force)</span>
+                  : <span className="ml-1 text-[11px] text-gray-400">(auto)</span>}
+              </label>
+              <input name="tarif_vente_conseille" type="number" step="0.01" inputMode="decimal"
+                value={venteConseille}
+                onChange={(e) => { setManuel(true); setVenteConseille(e.target.value); }}
+                className={`w-full border rounded px-3 py-2.5 text-sm ${manuel ? "border-amber-300 bg-amber-50 font-semibold" : ""}`} />
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Taux marge en decimal (0,80 = 80 %). Le tarif de vente est calcule :
-            achat x (1 + marge), comme dans le catalogue.
+            Taux marge en decimal (0,80 = 80 %). Le tarif conseille se calcule tout
+            seul (achat x (1 + marge)) ; tu peux le forcer a un prix rond.
+            {manuel && (
+              <button type="button" onClick={() => setManuel(false)}
+                className="ml-1 text-blue-700 underline">
+                Revenir au calcul automatique
+              </button>
+            )}
           </p>
 
           {/* Apercu temps reel */}
-          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
-            <p className="text-xs font-semibold text-blue-800 uppercase mb-2">Apercu en temps reel (marge {margePct} %)</p>
-            <div className="rounded bg-white border border-blue-200 p-3 space-y-0.5 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Tarif achat HT</span><span>{eur(achat)}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Tarif vente conseille HT</span><span className="font-semibold">{eur(vente)}</span></div>
-              <div className="flex justify-between text-green-700"><span>Marge brute</span><span className="font-semibold">{eur(margeBrute)}{achat > 0 ? ` (${margePct} %)` : ""}</span></div>
-              {N(commission) > 0 && (
-                <>
-                  <div className="flex justify-between"><span className="text-gray-500">Commission apporteur</span><span>- {eur(N(commission))}</span></div>
-                  <div className="flex justify-between text-green-700"><span>Marge nette</span><span className="font-semibold">{eur(margeNette)}</span></div>
-                </>
-              )}
+          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-3">
+            <p className="text-xs font-semibold text-blue-800 uppercase">Apercu en temps reel</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="rounded bg-white border border-blue-200 p-3 space-y-0.5 text-sm">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Sur le tarif conseille</p>
+                <div className="flex justify-between"><span className="text-gray-500">Achat</span><span>{eur(achat)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Vente conseillee</span><span className="font-semibold">{eur(vente)}</span></div>
+                <div className="flex justify-between text-green-700"><span>Marge brute</span><span className="font-semibold">{eur(margeBrute)}{achat > 0 ? ` (${margePct} %)` : ""}</span></div>
+              </div>
+              <div className="rounded bg-white border border-blue-200 p-3 space-y-0.5 text-sm">
+                <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Reperes</p>
+                <div className="flex justify-between"><span className="text-gray-500">Vente theorique</span><span>{eur(venteTheorique)} <span className="text-gray-400">({margePctTheorique} %)</span></span></div>
+                {manuel && <div className="flex justify-between"><span className="text-gray-500">Ecart vs theorique</span><span className={ecartTheorique < 0 ? "text-red-600" : "text-gray-700"}>{eur(ecartTheorique)}</span></div>}
+                {N(commission) > 0 && <div className="flex justify-between"><span className="text-gray-500">Commission apporteur</span><span>- {eur(N(commission))}</span></div>}
+                <div className="flex justify-between text-green-700"><span>Marge nette</span><span className="font-semibold">{eur(margeNette)}</span></div>
+              </div>
             </div>
           </div>
         </div>

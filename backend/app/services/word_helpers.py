@@ -51,8 +51,8 @@ def setup_page(doc: Document):
         section.page_height = Cm(29.7)
         section.top_margin = Cm(1.8)
         section.bottom_margin = Cm(1.8)
-        section.left_margin = Cm(2.0)
-        section.right_margin = Cm(2.0)
+        section.left_margin = Cm(1.5)
+        section.right_margin = Cm(1.5)
 
 
 def force_arial(doc: Document):

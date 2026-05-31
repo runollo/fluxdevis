@@ -13,11 +13,14 @@ Principe (cf. pratique des agences web) :
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 from io import BytesIO
+from pathlib import Path
 
 from app.services.echeances import repartir_au_centime
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_ALIGN_VERTICAL
+from docx.shared import Cm
 
 from app.services.word_helpers import (
     C_NAVY, C_TEXT, C_WHITE, C_AHEAD, C_PAID, C_CURR,
@@ -29,10 +32,28 @@ from app.services.word_helpers import (
 D = Decimal
 TVA_RATE = D("0.20")
 HEX_AVANTAGE = "EEF7F1"   # vert tres clair (encadre avantages)
+_ASSETS = Path(__file__).resolve().parent.parent / "templates" / "assets"
+
+# Socle commun a toutes les offres (elements de reassurance).
+SOCLE_COMMUN = [
+    ("Hébergement", "Inclus pendant toute la durée de l'abonnement"),
+    ("Nom de domaine", "Reprise de l'existant ou création (.com / .fr selon disponibilité) "
+                       "+ une adresse e-mail. Renouvellement inclus dans la maintenance"),
+    ("Certificat SSL", "Sécurisation HTTPS incluse"),
+    ("Design responsive", "Adapté mobile / tablette / desktop"),
+    ("Formulaire de contact", "Avec protection anti-spam"),
+]
 
 
 def _q(val) -> Decimal:
     return Decimal(str(val or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _fmt_pct(pct) -> str:
+    """Formate un pourcentage a la francaise sans zeros inutiles (30 %, 37,5 %)."""
+    d = Decimal(str(pct or 0))
+    d = d.quantize(Decimal("1")) if d == d.to_integral_value() else d.quantize(Decimal("0.1"))
+    return format(d, "f").replace(".", ",") + " %"
 
 
 # Repartition des echeances selon le plan de paiement (comptant).
@@ -100,12 +121,20 @@ def _calcul_synthese(devis) -> dict:
     if mensuel_net < 0:
         mensuel_net = D("0")
 
+    # Pourcentage d'avantages global (offerts + remise) sur la valeur catalogue.
+    avantages_pct = (
+        (avantages_total / valeur_catalogue * D("100")).quantize(D("1"), ROUND_HALF_UP)
+        if valeur_catalogue > 0 else D("0")
+    )
+
     return {
         "prix_creation_ht": prix_creation_ht,
         "remise_setup": remise_setup,
+        "remise_pct_setup": _q(devis.remise_pct_setup),
         "offerts": offerts,
         "offerts_setup_total": offerts_setup_total,
         "avantages_total": avantages_total,
+        "avantages_pct": avantages_pct,
         "valeur_catalogue": valeur_catalogue,
         "mensuel_brut": mensuel_brut,
         "mensuel_net": mensuel_net,
@@ -129,24 +158,27 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_emetteur_meta(doc, devis, societe)
     spacer(doc, 4)
     _add_client_objet(doc, devis)
-    spacer(doc, 6)
+    spacer(doc, 8)
 
     _add_accroche(doc, devis)
-    spacer(doc, 5)
+    spacer(doc, 8)
 
     _add_creation(doc, devis, s)
-    spacer(doc, 5)
+    spacer(doc, 8)
+
+    _add_socle(doc)
+    spacer(doc, 8)
 
     if s["avantages_total"] > 0:
-        _add_avantages(doc, s)
-        spacer(doc, 5)
+        _add_avantages(doc, devis, s)
+        spacer(doc, 8)
 
     if s["mensuel_net"] > 0:
         _add_abonnement(doc, devis, s)
-        spacer(doc, 5)
+        spacer(doc, 8)
 
-    _add_totaux(doc, devis, s)
-    spacer(doc, 6)
+    _add_recap_financier(doc, devis, s)
+    spacer(doc, 8)
 
     if _mode_label(devis) == "Leasing":
         _add_leasing(doc, devis)
@@ -167,23 +199,53 @@ def generer_devis(devis, societe) -> BytesIO:
 
 
 def _add_header(doc, devis, societe):
-    tbl = doc.add_table(rows=1, cols=1)
+    """En-tete : logos FluXweb (gauche) + titre DEVIS (droite), filet navy.
+
+    Favicon et wordmark sont places dans des cellules distinctes, centrees
+    verticalement, pour qu'ils s'alignent sur leur centre (et non sur la
+    ligne de base, qui ferait remonter le favicon plus haut).
+    """
+    mark = _ASSETS / "logo_mark.png"
+    wordmark = _ASSETS / "logo_wordmark.png"
+    has_logos = mark.exists() and wordmark.exists()
+
+    tbl = doc.add_table(rows=1, cols=3)
     tbl_no_spacing(tbl)
-    cell = tbl.rows[0].cells[0]
-    cell_bg(cell, HEX_NAVY)
-    row_height(tbl.rows[0], 1.2)
-    marque = (societe.marque if societe and societe.marque else None) or \
-             (societe.nom if societe else "FluXweb")
-    cell_text(cell, f"{marque}  —  DEVIS",
-              bold=True, size=13, color=C_WHITE, align=WD_ALIGN_PARAGRAPH.CENTER)
+    c_mark, c_word, c_titre = tbl.rows[0].cells
+    cell_w(c_mark, 1.2)
+    cell_w(c_word, 6.0)
+    cell_w(c_titre, 10.8)
+    for c in (c_mark, c_word, c_titre):
+        c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+    if has_logos:
+        p = c_mark.paragraphs[0]
+        p_fmt(p, before=0, after=0)
+        p.add_run().add_picture(str(mark), height=Cm(0.8))
+        p = c_word.paragraphs[0]
+        p_fmt(p, before=0, after=0)
+        p.add_run().add_picture(str(wordmark), height=Cm(0.62))
+    else:
+        marque = (societe.marque if societe and societe.marque else None) or \
+                 (societe.nom if societe else "FluXweb")
+        p = c_word.paragraphs[0]
+        p_fmt(p, before=0, after=0)
+        run(p, marque, bold=True, size=16, color=C_NAVY)
+
+    p = c_titre.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p_fmt(p, before=0, after=0)
+    run(p, "DEVIS", bold=True, size=22, color=C_NAVY)
+
+    hline(doc)
 
 
 def _add_emetteur_meta(doc, devis, societe):
     tbl = doc.add_table(rows=1, cols=2)
     tbl_no_spacing(tbl)
     left, right = tbl.rows[0].cells[0], tbl.rows[0].cells[1]
-    cell_w(left, 9)
-    cell_w(right, 8)
+    cell_w(left, 9.5)
+    cell_w(right, 8.5)
 
     lignes_emetteur = []
     if societe:
@@ -219,13 +281,8 @@ def _add_emetteur_meta(doc, devis, societe):
 
 
 def _add_client_objet(doc, devis):
-    tbl = doc.add_table(rows=1, cols=2)
-    tbl_no_spacing(tbl)
-    left, right = tbl.rows[0].cells[0], tbl.rows[0].cells[1]
-    cell_w(left, 9)
-    cell_w(right, 8)
-
-    p = left.add_paragraph()
+    # DESTINATAIRE (bloc adresse, aligne a gauche sous l'emetteur)
+    p = doc.add_paragraph()
     p_fmt(p, before=0, after=1)
     run(p, "DESTINATAIRE", bold=True, size=7, color=C_NAVY)
     cp_ville = " ".join(x for x in [devis.client_cp, devis.client_ville] if x)
@@ -238,21 +295,17 @@ def _add_client_objet(doc, devis):
         f"Tél : {devis.client_telephone}" if devis.client_telephone else "",
     ]:
         if line:
-            p = left.add_paragraph()
+            p = doc.add_paragraph()
             p_fmt(p, before=0, after=0)
             run(p, line, size=8, color=C_TEXT)
 
-    p = right.add_paragraph()
-    p_fmt(p, before=0, after=1)
-    run(p, "OBJET", bold=True, size=7, color=C_NAVY)
-    p = right.add_paragraph()
+    # OBJET : ligne pleine largeur, alignee a gauche (convention courrier commercial)
+    spacer(doc, 4)
+    p = doc.add_paragraph()
     p_fmt(p, before=0, after=0)
-    objet = "Création de votre site internet"
-    run(p, objet, size=8, color=C_TEXT)
-    p = right.add_paragraph()
-    p_fmt(p, before=0, after=0)
-    sous = f"{devis.offre_nom}" + (f" ({devis.offre_type_site})" if devis.offre_type_site else "")
-    run(p, sous, size=8, color=C_AHEAD)
+    run(p, "Objet : ", bold=True, size=9, color=C_NAVY)
+    sous = devis.offre_nom + (f" ({devis.offre_type_site})" if devis.offre_type_site else "")
+    run(p, "Création de votre site internet — " + sous, size=9, color=C_TEXT)
 
 
 def _add_accroche(doc, devis):
@@ -267,6 +320,24 @@ def _add_accroche(doc, devis):
 
 def _items_offerts_designations(devis) -> set[str]:
     return {(a.designation or "").strip() for a in (devis.articles_offerts or [])}
+
+
+def _add_socle(doc):
+    """Socle commun a toutes les offres (reassurance : ce qui est toujours inclus)."""
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "INCLUS DANS TOUTES NOS OFFRES",
+              bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=len(SOCLE_COMMUN), cols=2)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    for i, (item, detail) in enumerate(SOCLE_COMMUN):
+        cell_w(tbl.rows[i].cells[0], 5)
+        cell_w(tbl.rows[i].cells[1], 13)
+        cell_text(tbl.rows[i].cells[0], item, bold=True, size=8, color=C_NAVY)
+        cell_text(tbl.rows[i].cells[1], detail, size=8, color=C_TEXT)
 
 
 def _add_creation(doc, devis, s):
@@ -285,7 +356,7 @@ def _add_creation(doc, devis, s):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
     cell = tbl.rows[0].cells[0]
-    cell_w(cell, 17)
+    cell_w(cell, 18)
 
     # Sous-titre (l'offre)
     p = cell.paragraphs[0]
@@ -305,7 +376,9 @@ def _add_creation(doc, devis, s):
     for lg in sorted(devis.lignes or [], key=lambda x: x.ordre):
         nom = (lg.designation or "").strip()
         if nom:
-            puces.append((nom, "offert" if nom in offerts_noms else "normal"))
+            qte = lg.quantite or 1
+            libelle = nom if qte <= 1 else f"{nom} (x{qte})"
+            puces.append((libelle, "offert" if nom in offerts_noms else "normal"))
     for opt in sorted(devis.options or [], key=lambda x: x.ordre):
         type_ligne = (opt.type_ligne or "").upper()
         if type_ligne in ("RECURRENT", "OPTION_RECURRENT", "PACK"):
@@ -341,19 +414,23 @@ def _add_creation(doc, devis, s):
     run(p, fmt_eur(s["prix_creation_ht"]), bold=True, size=11, color=C_NAVY)
 
 
-def _add_avantages(doc, s):
+def _add_avantages(doc, devis, s):
     """Encadre VOS AVANTAGES : offerts (valeur) + remise + total."""
     rows = []
     for o in s["offerts"]:
         rows.append((f"Offert : {o['designation']}", "valeur " + fmt_eur(o["valeur"])))
     if s["remise_setup"] > 0:
-        rows.append(("Remise commerciale", "− " + fmt_eur(s["remise_setup"])))
+        label_remise = "Remise commerciale"
+        if s["remise_pct_setup"] > 0:
+            label_remise += f" (− {_fmt_pct(s['remise_pct_setup'])})"
+        rows.append((label_remise, "− " + fmt_eur(s["remise_setup"])))
 
     # En-tete
     tbl_head = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl_head)
     cell_bg(tbl_head.rows[0].cells[0], HEX_PAID)
-    cell_text(tbl_head.rows[0].cells[0], "VOS AVANTAGES", bold=True, size=10, color=C_PAID)
+    titre_av = f"VOS AVANTAGES — valables jusqu’au {devis.date_validite.strftime('%d/%m/%Y')}"
+    cell_text(tbl_head.rows[0].cells[0], titre_av, bold=True, size=10, color=C_PAID)
 
     tbl = doc.add_table(rows=len(rows) + 1, cols=2)
     tbl_no_spacing(tbl)
@@ -361,7 +438,7 @@ def _add_avantages(doc, s):
     for i, (label, val) in enumerate(rows):
         cell_bg(tbl.rows[i].cells[0], HEX_AVANTAGE)
         cell_bg(tbl.rows[i].cells[1], HEX_AVANTAGE)
-        cell_w(tbl.rows[i].cells[0], 13)
+        cell_w(tbl.rows[i].cells[0], 14)
         cell_w(tbl.rows[i].cells[1], 4)
         cell_text(tbl.rows[i].cells[0], label, size=8, color=C_PAID)
         cell_text(tbl.rows[i].cells[1], val, size=8, color=C_PAID,
@@ -371,17 +448,22 @@ def _add_avantages(doc, s):
     last = len(rows)
     cell_bg(tbl.rows[last].cells[0], HEX_PAID)
     cell_bg(tbl.rows[last].cells[1], HEX_PAID)
-    cell_w(tbl.rows[last].cells[0], 13)
+    cell_w(tbl.rows[last].cells[0], 14)
     cell_w(tbl.rows[last].cells[1], 4)
-    cell_text(tbl.rows[last].cells[0],
-              "Soit un total d’avantages offerts sur votre projet",
+    label_total = "Soit un total d’avantages offerts sur votre projet"
+    if s["avantages_pct"] > 0:
+        label_total += f" ({_fmt_pct(s['avantages_pct'])} de la valeur catalogue)"
+    cell_text(tbl.rows[last].cells[0], label_total,
               bold=True, size=8, color=C_PAID)
     cell_text(tbl.rows[last].cells[1], fmt_eur(s["avantages_total"]),
               bold=True, size=9, color=C_PAID, align=WD_ALIGN_PARAGRAPH.RIGHT)
 
 
 def _add_abonnement(doc, devis, s):
-    """Section ABONNEMENT MENSUEL : perimetre recurrent + mensuel HT/TTC."""
+    """Section ABONNEMENT MENSUEL : perimetre recurrent + valorisation commerciale.
+
+    Le detail comptable HT/TVA/TTC figure dans le RECAPITULATIF FINANCIER.
+    """
     # En-tete
     tbl_head = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl_head)
@@ -393,7 +475,7 @@ def _add_abonnement(doc, devis, s):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
     cell = tbl.rows[0].cells[0]
-    cell_w(cell, 17)
+    cell_w(cell, 18)
 
     p = cell.paragraphs[0]
     p_fmt(p, before=2, after=1)
@@ -415,45 +497,57 @@ def _add_abonnement(doc, devis, s):
 
     mensuel_net = s["mensuel_net"]
     mensuel_brut = s["mensuel_brut"]
-    mensuel_ttc = _q(mensuel_net * (D("1") + TVA_RATE))
 
-    # Prix mensuel (avec catalogue barre si avantage)
-    p = cell.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p_fmt(p, before=4, after=0)
+    # Tarif catalogue barre (uniquement si avantage sur le recurrent)
     if mensuel_brut > mensuel_net:
-        run(p, fmt_eur(mensuel_brut) + " ", size=9, color=C_AHEAD, strike=True)
-    run(p, "Abonnement HT : ", bold=True, size=9, color=C_TEXT)
-    run(p, fmt_eur(mensuel_net) + " /mois", bold=True, size=10, color=C_NAVY)
+        p = cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_fmt(p, before=4, after=0)
+        run(p, "Tarif catalogue : ", size=8, color=C_AHEAD)
+        run(p, fmt_eur(mensuel_brut) + " HT /mois", size=8, color=C_AHEAD, strike=True)
 
+    # Votre tarif HT (avec % de reduction reel)
     p = cell.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p_fmt(p, before=0, after=2)
-    run(p, "Abonnement TTC : ", bold=True, size=9, color=C_TEXT)
-    run(p, fmt_eur(mensuel_ttc) + " /mois", bold=True, size=10, color=C_NAVY)
+    p_fmt(p, before=2 if mensuel_brut > mensuel_net else 4, after=0)
+    run(p, "Votre tarif HT : ", bold=True, size=8, color=C_TEXT)
+    run(p, fmt_eur(mensuel_net) + " /mois", bold=True, size=10, color=C_NAVY)
+    if mensuel_brut > mensuel_net:
+        reduction_pct = (mensuel_brut - mensuel_net) / mensuel_brut * D("100")
+        run(p, f"  (− {_fmt_pct(reduction_pct.quantize(D('1'), ROUND_HALF_UP))})",
+            bold=True, size=8, color=C_PAID)
 
-    # Note
+    # Economie annualisee (levier fort : un petit mensuel devient un gros chiffre annuel)
+    if mensuel_brut > mensuel_net:
+        economie_an = _q((mensuel_brut - mensuel_net) * D("12"))
+        p = cell.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        p_fmt(p, before=0, after=0)
+        run(p, "soit " + fmt_eur(economie_an) + " d’économie par an", bold=True,
+            size=8, color=C_PAID)
+
+    # Note (le detail HT/TVA/TTC est dans le recapitulatif financier ci-dessous)
     p = doc.add_paragraph()
-    p_fmt(p, before=2, after=0)
-    run(p, "Démarre à la mise en ligne du site. Sans engagement de durée.",
+    p_fmt(p, before=4, after=0)
+    run(p, "Démarre à la mise en ligne du site. Engagement initial de 12 mois, "
+           "reconductible par tacite reconduction.",
         italic=True, size=7, color=C_AHEAD)
 
 
-def _add_totaux(doc, devis, s):
-    """Bloc totaux : ancrage valeur catalogue -> avantages -> net a payer TTC."""
-    lignes = []
-    if s["avantages_total"] > 0:
-        lignes.append(("Valeur catalogue HT", fmt_eur(s["valeur_catalogue"]), False, False))
-        lignes.append(("Avantages offerts", "− " + fmt_eur(s["avantages_total"]), False, False))
-    lignes.append(("Total HT", fmt_eur(_q(devis.total_ht)), False, False))
-    lignes.append(("TVA 20 %", fmt_eur(_q(devis.total_tva)), False, False))
-    lignes.append(("NET À PAYER (création)", fmt_eur(_q(devis.total_ttc)), True, True))
+def _recap_sous_titre(doc, texte):
+    """Sous-titre d'un bloc du recapitulatif financier."""
+    p = doc.add_paragraph()
+    p_fmt(p, before=4, after=2)
+    run(p, texte, bold=True, size=8, color=C_NAVY)
 
+
+def _recap_table(doc, lignes, suffix_total=""):
+    """Petit tableau comptable a 2 colonnes (libelle / montant), derniere ligne = total navy."""
     tbl = doc.add_table(rows=len(lignes), cols=2)
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
-    for i, (label, val, is_total, _) in enumerate(lignes):
-        cell_w(tbl.rows[i].cells[0], 13)
+    for i, (label, val, is_total) in enumerate(lignes):
+        cell_w(tbl.rows[i].cells[0], 14)
         cell_w(tbl.rows[i].cells[1], 4)
         if is_total:
             cell_bg(tbl.rows[i].cells[0], HEX_NAVY)
@@ -462,8 +556,56 @@ def _add_totaux(doc, devis, s):
         size = 10 if is_total else 9
         cell_text(tbl.rows[i].cells[0], label, bold=is_total, size=size, color=color,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)
-        cell_text(tbl.rows[i].cells[1], val + (" TTC" if is_total else ""),
+        cell_text(tbl.rows[i].cells[1], val + (suffix_total if is_total else ""),
                   bold=is_total, size=size, color=color, align=WD_ALIGN_PARAGRAPH.RIGHT)
+
+
+def _add_recap_financier(doc, devis, s):
+    """Tableau RECAPITULATIF FINANCIER : creation (one-shot) puis abonnement mensuel.
+
+    Vue purement comptable (HT -> TVA -> TTC). La valorisation des avantages reste
+    dans l'encadre VOS AVANTAGES ; ce bloc ne fait que l'addition.
+    """
+    # En-tete de section (bandeau navy)
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "RÉCAPITULATIF FINANCIER",
+              bold=True, size=10, color=C_WHITE)
+
+    # --- Bloc creation (one-shot) ---
+    # total_ht est NET de remise ; le brut catalogue = net + remise.
+    _recap_sous_titre(doc, "Création et mise en place (à régler à la commande)")
+    net_ht = _q(devis.total_ht)
+    if s["remise_setup"] > 0:
+        brut_ht = net_ht + s["remise_setup"]
+        label_remise = "Remise commerciale"
+        if s["remise_pct_setup"] > 0:
+            label_remise += f" (− {_fmt_pct(s['remise_pct_setup'])})"
+        lignes = [
+            ("Création et mise en place HT", fmt_eur(brut_ht), False),
+            (label_remise, "− " + fmt_eur(s["remise_setup"]), False),
+            ("Sous-total HT", fmt_eur(net_ht), False),
+        ]
+    else:
+        lignes = [("Création et mise en place HT", fmt_eur(net_ht), False)]
+    lignes.append(("TVA 20 %", fmt_eur(_q(devis.total_tva)), False))
+    lignes.append(("TOTAL TTC À LA COMMANDE", fmt_eur(_q(devis.total_ttc)), True))
+    _recap_table(doc, lignes, suffix_total=" TTC")
+
+    # --- Bloc abonnement mensuel ---
+    if s["mensuel_net"] > 0:
+        spacer(doc, 4)
+        _recap_sous_titre(doc, "Abonnement mensuel (maintenance & hébergement)")
+        mensuel_net = s["mensuel_net"]
+        mensuel_tva = _q(mensuel_net * TVA_RATE)
+        mensuel_ttc = _q(mensuel_net * (D("1") + TVA_RATE))
+        lignes = [
+            ("Abonnement HT", fmt_eur(mensuel_net) + " /mois", False),
+            ("TVA 20 %", fmt_eur(mensuel_tva) + " /mois", False),
+            ("TOTAL TTC MENSUEL", fmt_eur(mensuel_ttc) + " /mois", True),
+        ]
+        _recap_table(doc, lignes)
 
 
 def _add_echeancier(doc, devis):
@@ -478,12 +620,13 @@ def _add_echeancier(doc, devis):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
     for i, h in enumerate(["Échéance", "Montant TTC"]):
+        cell_w(tbl.rows[0].cells[i], 14 if i == 0 else 4)
         cell_bg(tbl.rows[0].cells[i], HEX_NAVY)
         cell_text(tbl.rows[0].cells[i], h, bold=True, size=8, color=C_WHITE,
-                  align=WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT)
+                  align=WD_ALIGN_PARAGRAPH.RIGHT if i == 1 else WD_ALIGN_PARAGRAPH.LEFT)
 
     for idx, (label, montant) in enumerate(parts, start=1):
-        cell_w(tbl.rows[idx].cells[0], 13)
+        cell_w(tbl.rows[idx].cells[0], 14)
         cell_w(tbl.rows[idx].cells[1], 4)
         cell_text(tbl.rows[idx].cells[0], label, size=8)
         cell_text(tbl.rows[idx].cells[1], fmt_eur(montant), size=8,
@@ -508,7 +651,7 @@ def _add_leasing(doc, devis):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
     for i, (label, val) in enumerate(lignes):
-        cell_w(tbl.rows[i].cells[0], 13)
+        cell_w(tbl.rows[i].cells[0], 14)
         cell_w(tbl.rows[i].cells[1], 4)
         cell_text(tbl.rows[i].cells[0], label, bold=True, size=8, color=C_TEXT,
                   align=WD_ALIGN_PARAGRAPH.RIGHT)

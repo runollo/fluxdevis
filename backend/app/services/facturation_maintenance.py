@@ -55,12 +55,22 @@ def periode_pour_index(mise_en_ligne: date, index: int) -> tuple[date, date]:
     return debut, fin
 
 
+def montant_recurrent_brut_ht(devis: Devis) -> Decimal:
+    """Mensuel HT brut (tarif catalogue) : pack maintenance + options recurrentes."""
+    return _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+
+
 def montant_recurrent_ht(devis: Devis) -> Decimal:
-    """Montant HT mensuel du recurrent (pack maintenance + options recurrentes),
-    net du recurrent offert (pack/options offerts en mensuel)."""
-    brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
+    """Mensuel HT net facture au client : (brut - offerts recurrents) apres remise %.
+
+    SOURCE UNIQUE du mensuel net : utilise a la fois par l'affichage du devis
+    (generation_devis._calcul_synthese, panneau maintenance) et par la facture
+    de maintenance, pour garantir que la facture correspond exactement au devis.
+    """
+    brut = montant_recurrent_brut_ht(devis)
     offert = _q(devis.total_offerts_recurrent_ht or 0)
-    net = brut - offert
+    remise_pct = _q(getattr(devis, "remise_pct_recurrent", 0)) / Decimal("100")
+    net = _q((brut - offert) * (Decimal("1") - remise_pct))
     return net if net > 0 else Decimal("0")
 
 

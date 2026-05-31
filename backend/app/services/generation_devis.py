@@ -13,26 +13,26 @@ Principe (cf. pratique des agences web) :
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 from io import BytesIO
-from pathlib import Path
 
 from app.services.echeances import repartir_au_centime
+from app.services.facturation_maintenance import (
+    montant_recurrent_brut_ht, montant_recurrent_ht,
+)
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
-from docx.shared import Cm
 
 from app.services.word_helpers import (
     C_NAVY, C_TEXT, C_WHITE, C_AHEAD, C_PAID, C_CURR,
     HEX_NAVY, HEX_PAID,
     fmt_eur, setup_page, force_arial, tbl_no_spacing, full_tbl_borders,
-    cell_bg, cell_w, row_height, p_fmt, run, cell_text, hline, spacer,
+    cell_bg, cell_w, p_fmt, run, cell_text, hline, spacer,
+    add_logo_header, add_emetteur_meta, add_destinataire, add_objet,
 )
 
 D = Decimal
 TVA_RATE = D("0.20")
 HEX_AVANTAGE = "EEF7F1"   # vert tres clair (encadre avantages)
-_ASSETS = Path(__file__).resolve().parent.parent / "templates" / "assets"
 
 # Socle commun a toutes les offres (elements de reassurance).
 SOCLE_COMMUN = [
@@ -114,12 +114,9 @@ def _calcul_synthese(devis) -> dict:
     avantages_total = offerts_setup_total + remise_setup
     valeur_catalogue = prix_creation_ht + avantages_total
 
-    # Mensuel : brut (catalogue) puis net (apres deduction offerts recurrent et remise).
-    mensuel_brut = _q(devis.total_pack_maintenance_ht) + _q(devis.total_options_recurrent_ht)
-    remise_pct = _q(devis.remise_pct_recurrent) / D("100")
-    mensuel_net = _q((mensuel_brut - offerts_recurrent) * (D("1") - remise_pct))
-    if mensuel_net < 0:
-        mensuel_net = D("0")
+    # Mensuel : brut (catalogue) et net (source unique partagee avec la facture).
+    mensuel_brut = montant_recurrent_brut_ht(devis)
+    mensuel_net = montant_recurrent_ht(devis)
 
     # Pourcentage d'avantages global (offerts + remise) sur la valeur catalogue.
     avantages_pct = (
@@ -199,57 +196,15 @@ def generer_devis(devis, societe) -> BytesIO:
 
 
 def _add_header(doc, devis, societe):
-    """En-tete : logos FluXweb (gauche) + titre DEVIS (droite), filet navy.
-
-    Favicon et wordmark sont places dans des cellules distinctes, centrees
-    verticalement, pour qu'ils s'alignent sur leur centre (et non sur la
-    ligne de base, qui ferait remonter le favicon plus haut).
-    """
-    mark = _ASSETS / "logo_mark.png"
-    wordmark = _ASSETS / "logo_wordmark.png"
-    has_logos = mark.exists() and wordmark.exists()
-
-    tbl = doc.add_table(rows=1, cols=3)
-    tbl_no_spacing(tbl)
-    c_mark, c_word, c_titre = tbl.rows[0].cells
-    cell_w(c_mark, 1.2)
-    cell_w(c_word, 6.0)
-    cell_w(c_titre, 10.8)
-    for c in (c_mark, c_word, c_titre):
-        c.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
-
-    if has_logos:
-        p = c_mark.paragraphs[0]
-        p_fmt(p, before=0, after=0)
-        p.add_run().add_picture(str(mark), height=Cm(0.8))
-        p = c_word.paragraphs[0]
-        p_fmt(p, before=0, after=0)
-        p.add_run().add_picture(str(wordmark), height=Cm(0.62))
-    else:
-        marque = (societe.marque if societe and societe.marque else None) or \
-                 (societe.nom if societe else "FluXweb")
-        p = c_word.paragraphs[0]
-        p_fmt(p, before=0, after=0)
-        run(p, marque, bold=True, size=16, color=C_NAVY)
-
-    p = c_titre.paragraphs[0]
-    p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    p_fmt(p, before=0, after=0)
-    run(p, "DEVIS", bold=True, size=22, color=C_NAVY)
-
-    hline(doc)
+    marque = (societe.marque if societe and societe.marque else None) or \
+             (societe.nom if societe else "FluXweb")
+    add_logo_header(doc, "DEVIS", marque_fallback=marque)
 
 
 def _add_emetteur_meta(doc, devis, societe):
-    tbl = doc.add_table(rows=1, cols=2)
-    tbl_no_spacing(tbl)
-    left, right = tbl.rows[0].cells[0], tbl.rows[0].cells[1]
-    cell_w(left, 9.5)
-    cell_w(right, 8.5)
-
-    lignes_emetteur = []
+    emetteur_lines = []
     if societe:
-        lignes_emetteur = [
+        emetteur_lines = [
             (societe.nom, True),
             (societe.forme_juridique or "", False),
             (societe.adresse or "", False),
@@ -257,13 +212,6 @@ def _add_emetteur_meta(doc, devis, societe):
             (f"SIRET : {societe.siret}" if societe.siret else "", False),
             (f"TVA : {societe.tva_intracom}" if societe.tva_intracom else "", False),
         ]
-    for text, bold in lignes_emetteur:
-        if not text:
-            continue
-        p = left.add_paragraph()
-        p_fmt(p, before=0, after=0)
-        run(p, text, bold=bold, size=8, color=C_TEXT)
-
     meta = [
         ("Devis n°", devis.reference),
         ("Date d’émission", devis.date_emission.strftime("%d/%m/%Y")),
@@ -272,40 +220,22 @@ def _add_emetteur_meta(doc, devis, societe):
     ]
     if devis.commercial:
         meta.append(("Commercial", devis.commercial))
-    for label, val in meta:
-        p = right.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p_fmt(p, before=0, after=0)
-        run(p, f"{label} : ", bold=True, size=8, color=C_TEXT)
-        run(p, str(val), size=8, color=C_TEXT)
+    add_emetteur_meta(doc, emetteur_lines, meta)
 
 
 def _add_client_objet(doc, devis):
-    # DESTINATAIRE (bloc adresse, aligne a gauche sous l'emetteur)
-    p = doc.add_paragraph()
-    p_fmt(p, before=0, after=1)
-    run(p, "DESTINATAIRE", bold=True, size=7, color=C_NAVY)
     cp_ville = " ".join(x for x in [devis.client_cp, devis.client_ville] if x)
-    for line in [
+    add_destinataire(doc, [
         devis.client_raison_sociale,
         devis.client_interlocuteur,
         devis.client_adresse,
         cp_ville,
         f"SIRET : {devis.client_siret}" if devis.client_siret else "",
         f"Tél : {devis.client_telephone}" if devis.client_telephone else "",
-    ]:
-        if line:
-            p = doc.add_paragraph()
-            p_fmt(p, before=0, after=0)
-            run(p, line, size=8, color=C_TEXT)
-
-    # OBJET : ligne pleine largeur, alignee a gauche (convention courrier commercial)
+    ])
     spacer(doc, 4)
-    p = doc.add_paragraph()
-    p_fmt(p, before=0, after=0)
-    run(p, "Objet : ", bold=True, size=9, color=C_NAVY)
     sous = devis.offre_nom + (f" ({devis.offre_type_site})" if devis.offre_type_site else "")
-    run(p, "Création de votre site internet — " + sous, size=9, color=C_TEXT)
+    add_objet(doc, "Création de votre site internet — " + sous)
 
 
 def _add_accroche(doc, devis):

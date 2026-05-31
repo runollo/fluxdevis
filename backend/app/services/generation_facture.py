@@ -8,15 +8,14 @@ from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 
 from docx import Document
-from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_ALIGN_VERTICAL
 
 from app.services.word_helpers import (
     C_NAVY, C_TEXT, C_WHITE, C_PAID, C_CURR, C_AHEAD,
     HEX_NAVY, HEX_CURR, HEX_PAID,
     fmt_eur, setup_page, force_arial, tbl_no_spacing, full_tbl_borders,
-    cell_bg, cell_w, row_height, p_fmt, run, cell_text, hline, spacer,
+    cell_bg, cell_w, p_fmt, run, cell_text, hline, spacer,
+    add_logo_header, add_emetteur_meta, add_destinataire, add_objet,
 )
 
 D = Decimal
@@ -89,9 +88,10 @@ def generer_facture(data: FactureData) -> BytesIO:
     setup_page(doc)
     force_arial(doc)
 
-    titre = "FACTURE DE MAINTENANCE" if data.type_facture == "maintenance" else "FACTURE D\u2019ACOMPTE"
+    sous_map = {"maintenance": "de maintenance", "solde": "de solde", "acompte": "d\u2019acompte"}
+    sous_titre = sous_map.get(data.type_facture, "d\u2019acompte")
 
-    _add_header(doc, data, titre)
+    _add_header(doc, data, sous_titre)
     spacer(doc, 4)
     _add_emetteur_meta(doc, data)
     spacer(doc, 4)
@@ -114,34 +114,21 @@ def generer_facture(data: FactureData) -> BytesIO:
     return buf
 
 
-def _add_header(doc, data, titre):
-    tbl = doc.add_table(rows=1, cols=1)
-    tbl_no_spacing(tbl)
-    cell = tbl.rows[0].cells[0]
-    cell_bg(cell, HEX_NAVY)
-    row_height(tbl.rows[0], 1.2)
-    marque = data.emetteur_marque or data.emetteur_nom
-    cell_text(cell, f"{marque}  \u2014  {titre}",
-              bold=True, size=13, color=C_WHITE, align=WD_ALIGN_PARAGRAPH.CENTER)
+def _add_header(doc, data, sous_titre):
+    marque = data.emetteur_marque or data.emetteur_nom or "FluXweb"
+    add_logo_header(doc, "FACTURE", sous_titre=sous_titre, marque_fallback=marque)
 
 
 def _add_emetteur_meta(doc, data):
-    tbl = doc.add_table(rows=1, cols=2)
-    tbl_no_spacing(tbl)
-    left, right = tbl.rows[0].cells[0], tbl.rows[0].cells[1]
-    cell_w(left, 9)
-    cell_w(right, 8)
-
-    for text, bold in [
-        (data.emetteur_nom, True), (data.emetteur_forme, False),
-        (data.emetteur_adresse, False), (data.emetteur_cp_ville, False),
-        (f"SIRET : {data.emetteur_siret}", False),
-        (f"TVA : {data.emetteur_tva_num}", False),
-    ]:
-        p = left.add_paragraph()
-        p_fmt(p, before=0, after=0)
-        run(p, text, bold=bold, size=8, color=C_TEXT)
-
+    emetteur_lines = [
+        (data.emetteur_nom, True),
+        (data.emetteur_forme, False),
+        (data.emetteur_adresse, False),
+        (data.emetteur_cp_ville, False),
+        (f"SIRET : {data.emetteur_siret}" if data.emetteur_siret else "", False),
+        (f"RCS : {data.emetteur_rcs}" if data.emetteur_rcs else "", False),
+        (f"TVA : {data.emetteur_tva_num}" if data.emetteur_tva_num else "", False),
+    ]
     meta = [
         ("Facture n\u00b0", data.numero),
         ("Date d\u2019\u00e9mission", data.date_emission.strftime("%d/%m/%Y")),
@@ -149,37 +136,20 @@ def _add_emetteur_meta(doc, data):
     ]
     if data.periode:
         meta.append(("P\u00e9riode", data.periode))
-    for label, val in meta:
-        p = right.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p_fmt(p, before=0, after=0)
-        run(p, f"{label} : ", bold=True, size=8, color=C_TEXT)
-        run(p, val, size=8, color=C_TEXT)
+    add_emetteur_meta(doc, emetteur_lines, meta)
 
 
 def _add_client_objet(doc, data):
-    tbl = doc.add_table(rows=1, cols=2)
-    tbl_no_spacing(tbl)
-    left, right = tbl.rows[0].cells[0], tbl.rows[0].cells[1]
-    cell_w(left, 9)
-    cell_w(right, 8)
-
-    p = left.add_paragraph()
-    p_fmt(p, before=0, after=1)
-    run(p, "DESTINATAIRE", bold=True, size=7, color=C_NAVY)
-    for line in [data.client_societe, data.client_contact, data.client_adresse,
-                 data.client_cp_ville, f"SIRET : {data.client_siret}"]:
-        if line:
-            p = left.add_paragraph()
-            p_fmt(p, before=0, after=0)
-            run(p, line, size=8, color=C_TEXT)
-
-    p = right.add_paragraph()
-    p_fmt(p, before=0, after=1)
-    run(p, "OBJET", bold=True, size=7, color=C_NAVY)
-    p = right.add_paragraph()
-    p_fmt(p, before=0, after=0)
-    run(p, data.objet, size=8, color=C_TEXT)
+    cp_ville = data.client_cp_ville
+    add_destinataire(doc, [
+        data.client_societe,
+        data.client_contact,
+        data.client_adresse,
+        cp_ville,
+        f"SIRET : {data.client_siret}" if data.client_siret else "",
+    ])
+    spacer(doc, 4)
+    add_objet(doc, data.objet)
 
 
 def _add_detail(doc, data):
@@ -188,7 +158,7 @@ def _add_detail(doc, data):
     full_tbl_borders(tbl)
 
     headers = ["D\u00e9signation", "Qt\u00e9", "P.U. HT", "TVA", "Montant HT"]
-    widths = [7.0, 2.0, 3.0, 2.5, 2.5]
+    widths = [8.0, 1.8, 3.0, 2.2, 3.0]
     for i, (h, w) in enumerate(zip(headers, widths)):
         cell_bg(tbl.rows[0].cells[i], HEX_NAVY)
         cell_w(tbl.rows[0].cells[i], w)
@@ -218,8 +188,8 @@ def _add_totaux(doc, data):
         ("Net \u00e0 payer", fmt_eur(data.montant_ttc)),
     ]
     for i, (label, val) in enumerate(lines):
-        cell_w(tbl.rows[i].cells[0], 10)
-        cell_w(tbl.rows[i].cells[1], 7)
+        cell_w(tbl.rows[i].cells[0], 14)
+        cell_w(tbl.rows[i].cells[1], 4)
         is_last = i == 3
         if is_last:
             cell_bg(tbl.rows[i].cells[0], HEX_NAVY)
@@ -239,10 +209,14 @@ def _add_echeancier(doc, data):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
 
+    ech_widths = [10.0, 4.0, 4.0]
+    ech_aligns = [WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER,
+                  WD_ALIGN_PARAGRAPH.RIGHT]
     for i, h in enumerate(["\u00c9ch\u00e9ance", "Date", "Montant TTC"]):
+        cell_w(tbl.rows[0].cells[i], ech_widths[i])
         cell_bg(tbl.rows[0].cells[i], HEX_NAVY)
         cell_text(tbl.rows[0].cells[i], h, bold=True, size=8, color=C_WHITE,
-                  align=WD_ALIGN_PARAGRAPH.CENTER)
+                  align=ech_aligns[i])
 
     for row_idx, ech in enumerate(data.echeances, start=1):
         is_current = row_idx - 1 == data.idx_echeance
@@ -254,6 +228,8 @@ def _add_echeancier(doc, data):
         elif is_paid:
             for c in row.cells:
                 cell_bg(c, HEX_PAID)
+        for i in range(3):
+            cell_w(row.cells[i], ech_widths[i])
         color = C_PAID if is_paid else (C_CURR if is_current else C_AHEAD)
         cell_text(row.cells[0], ech["label"], size=8, color=color, strike=is_paid)
         cell_text(row.cells[1], ech["date"], size=8, color=color, strike=is_paid,

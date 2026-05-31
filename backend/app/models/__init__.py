@@ -5,6 +5,7 @@ from app.models.option import Option, OptionInclusion
 from app.models.client import Client
 from app.models.devis import Devis, DevisLigne, DevisOptionLigne, DevisArticleOffert
 from app.models.facture import Facture, FactureLigne, Echeance
+from app.models.journal import JournalModification
 
 __all__ = [
     "Base",
@@ -19,4 +20,5 @@ __all__ = [
     "Facture",
     "FactureLigne",
     "Echeance",
+    "JournalModification",
 ]

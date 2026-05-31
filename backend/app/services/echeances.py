@@ -5,6 +5,7 @@ devis/factures (echeancier reel), pour qu'ils affichent toujours les memes
 montants.
 """
 
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 
@@ -13,6 +14,16 @@ _CENT = Decimal("0.01")
 
 def _q(v) -> Decimal:
     return Decimal(v).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def dates_echeancier(base: date, intervalle_jours: int, n: int) -> list[date]:
+    """Pre-remplit n dates d'echeance : base, base+pas, base+2*pas, ...
+
+    Le pas (intervalle en jours) tombe a 30 si invalide. Les dates restent
+    modifiables ligne par ligne ensuite (echeancier editable).
+    """
+    pas = intervalle_jours if (intervalle_jours and intervalle_jours > 0) else 30
+    return [base + timedelta(days=i * pas) for i in range(n)]
 
 
 def repartir_au_centime(total, fractions: list[Fraction]) -> list[Decimal]:

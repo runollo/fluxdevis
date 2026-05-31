@@ -65,6 +65,12 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     # Independante du plan de paiement du setup.
     date_mise_en_ligne: Mapped[date | None] = mapped_column(Date)
 
+    # Echeancier de l'acompte : date de depart (def = date_emission) et pas en
+    # jours entre versements. Servent a pre-remplir les dates d'echeance des
+    # factures d'acompte (dates restent editables ligne par ligne ensuite).
+    date_debut_echeancier: Mapped[date | None] = mapped_column(Date)
+    intervalle_echeance_jours: Mapped[int] = mapped_column(Integer, default=30, server_default="30")
+
     # Client (FK + snapshot des infos au moment du devis)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
     client_raison_sociale: Mapped[str] = mapped_column(String(200))

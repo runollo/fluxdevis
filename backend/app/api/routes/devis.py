@@ -18,10 +18,21 @@ from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, Sta
 from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis
 from app.services.generation_devis import generer_devis, repartition_echeances
+from app.services.echeances import dates_echeancier
 from app.services.export_excel import export_devis_xlsx
 from app.services.facturation_maintenance import (
     generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
 )
+from app.services import journal as journal_svc
+
+# Reverse de _PLAN_MAP : enum -> libelle ("33/33/33", ...)
+_PLAN_LABEL = {v: k for k, v in {
+    "100%": PlanPaiement.CENT,
+    "50/50": PlanPaiement.CINQUANTE_CINQUANTE,
+    "33/33/33": PlanPaiement.TIERS,
+    "50/25/25": PlanPaiement.CINQUANTE_VINGTCINQ_VINGTCINQ,
+    "25/25/25/25": PlanPaiement.VINGTCINQ_X4,
+}.items()}
 
 router = APIRouter()
 
@@ -225,6 +236,8 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         "date_emission": d.date_emission.isoformat(),
         "date_validite": d.date_validite.isoformat(),
         "date_mise_en_ligne": d.date_mise_en_ligne.isoformat() if d.date_mise_en_ligne else None,
+        "date_debut_echeancier": d.date_debut_echeancier.isoformat() if d.date_debut_echeancier else None,
+        "intervalle_echeance_jours": d.intervalle_echeance_jours,
         "client_raison_sociale": d.client_raison_sociale,
         "client_adresse": d.client_adresse,
         "client_cp": d.client_cp,
@@ -273,6 +286,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
                 "id": f.id, "numero": f.numero, "type": f.type.value,
                 "statut": f.statut.value, "total_ttc": str(f.total_ttc),
                 "date_emission": f.date_emission.isoformat(),
+                "date_echeance": f.date_echeance.isoformat(),
             }
             for f in sorted(d.factures, key=lambda x: x.id)
             if f.archived_at is None
@@ -607,6 +621,181 @@ async def definir_mise_en_ligne(
     return devis
 
 
+class ReferenceUpdate(BaseModel):
+    reference: str
+    motif: str | None = None
+    confirme: bool = False
+
+
+class DatesDevisUpdate(BaseModel):
+    date_emission: date | None = None
+    date_validite: date | None = None
+    motif: str | None = None
+    confirme: bool = False
+
+
+class EcheancierUpdate(BaseModel):
+    date_debut_echeancier: date | None = None
+    intervalle_echeance_jours: int | None = None
+    plan_paiement: str | None = None
+    motif: str | None = None
+    confirme: bool = False
+
+
+@router.patch("/{devis_id}/reference", response_model=DevisSummary)
+async def modifier_reference_devis(
+    devis_id: int, data: ReferenceUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Surcharge ponctuelle du numero de devis (cas legacy). Tracee dans l'historique."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+
+    nouvelle = (data.reference or "").strip()
+    if not nouvelle:
+        raise HTTPException(400, "La reference ne peut pas etre vide")
+    if nouvelle == devis.reference:
+        return devis
+
+    # Alerte : un devis deja emis n'est pas librement modifiable sans confirmation
+    if devis.statut != StatutDevis.BROUILLON and not data.confirme:
+        raise HTTPException(409, "Devis deja emis : confirmation requise (confirme=true)")
+
+    # Unicite
+    existe = (await db.execute(
+        select(func.count()).select_from(Devis).where(
+            Devis.reference == nouvelle, Devis.id != devis_id
+        )
+    )).scalar() or 0
+    if existe > 0:
+        raise HTTPException(400, f"La reference '{nouvelle}' est deja utilisee")
+
+    ancienne = devis.reference
+    devis.reference = nouvelle
+    journal_svc.enregistrer(db, "devis", devis_id, "reference", ancienne, nouvelle, data.motif)
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
+@router.patch("/{devis_id}/dates", response_model=DevisSummary)
+async def modifier_dates_devis(
+    devis_id: int, data: DatesDevisUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Modifie les dates d'emission / validite du devis. Tracee dans l'historique."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    if devis.statut != StatutDevis.BROUILLON and not data.confirme:
+        raise HTTPException(409, "Devis deja emis : confirmation requise (confirme=true)")
+
+    if data.date_emission is not None and data.date_emission != devis.date_emission:
+        journal_svc.enregistrer(db, "devis", devis_id, "date_emission",
+                                devis.date_emission, data.date_emission, data.motif)
+        devis.date_emission = data.date_emission
+    if data.date_validite is not None and data.date_validite != devis.date_validite:
+        journal_svc.enregistrer(db, "devis", devis_id, "date_validite",
+                                devis.date_validite, data.date_validite, data.motif)
+        devis.date_validite = data.date_validite
+
+    await db.commit()
+    await db.refresh(devis)
+    return devis
+
+
+_TYPES_ACOMPTE = (TypeFacture.ACOMPTE, TypeFacture.SOLDE)
+
+
+async def _recompute_dates_factures(db: AsyncSession, devis: Devis, factures: list[Facture]):
+    """Recalcule les dates d'echeance des factures d'acompte/solde BROUILLON depuis
+    la config d'echeancier du devis. N'altere ni les factures emises ni la maintenance."""
+    plan = devis.plan_paiement.value if devis.plan_paiement else "100%"
+    parts = repartition_echeances(plan, devis.total_ttc)
+    base = devis.date_debut_echeancier or devis.date_emission
+    dates = dates_echeancier(base, devis.intervalle_echeance_jours, len(parts))
+    acomptes = [f for f in factures if f.type in _TYPES_ACOMPTE]
+    for idx, f in enumerate(sorted(acomptes, key=lambda x: x.id)):
+        if f.statut != StatutFacture.BROUILLON:
+            continue
+        if idx < len(dates):
+            f.date_emission = dates[idx]
+            f.date_echeance = dates[idx]
+        for e in f.echeances:
+            if 1 <= e.numero <= len(dates):
+                e.date_echeance = dates[e.numero - 1]
+
+
+@router.patch("/{devis_id}/echeancier")
+async def modifier_echeancier_devis(
+    devis_id: int, data: EcheancierUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Modifie la config d'echeancier (date de debut, intervalle, plan) et met a
+    jour automatiquement les dates des factures BROUILLON. Tracee dans l'historique."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+
+    factures = (await db.execute(
+        select(Facture).where(Facture.devis_id == devis_id, Facture.archived_at.is_(None))
+        .options(selectinload(Facture.echeances))
+    )).scalars().all()
+    # Seules les factures d'acompte/solde sont concernees par l'echeancier.
+    factures_acompte = [f for f in factures if f.type in _TYPES_ACOMPTE]
+    has_emise = any(f.statut != StatutFacture.BROUILLON for f in factures_acompte)
+
+    plan_actuel = _PLAN_LABEL.get(devis.plan_paiement, "100%")
+    plan_change = data.plan_paiement is not None and data.plan_paiement != plan_actuel
+    if plan_change and data.plan_paiement not in _PLAN_MAP:
+        raise HTTPException(400, f"Plan de paiement inconnu : {data.plan_paiement}")
+
+    # Alerte sur factures deja emises
+    if has_emise and not data.confirme:
+        raise HTTPException(409, "Des factures sont deja emises : confirmation requise (confirme=true)")
+    if plan_change and has_emise:
+        raise HTTPException(
+            400, "Impossible de changer le plan : des factures sont deja emises. "
+                 "Regularisez-les avant."
+        )
+
+    # Config
+    if data.date_debut_echeancier is not None and data.date_debut_echeancier != devis.date_debut_echeancier:
+        journal_svc.enregistrer(db, "devis", devis_id, "date_debut_echeancier",
+                                devis.date_debut_echeancier, data.date_debut_echeancier, data.motif)
+        devis.date_debut_echeancier = data.date_debut_echeancier
+    if data.intervalle_echeance_jours is not None and data.intervalle_echeance_jours != devis.intervalle_echeance_jours:
+        journal_svc.enregistrer(db, "devis", devis_id, "intervalle_echeance_jours",
+                                devis.intervalle_echeance_jours, data.intervalle_echeance_jours, data.motif)
+        devis.intervalle_echeance_jours = data.intervalle_echeance_jours
+
+    if plan_change:
+        journal_svc.enregistrer(db, "devis", devis_id, "plan_paiement",
+                                plan_actuel, data.plan_paiement, data.motif)
+        devis.plan_paiement = _PLAN_MAP[data.plan_paiement]
+        # Factures d'acompte brouillon obsoletes (le nombre d'echeances change) :
+        # on les supprime et on regenere (la maintenance n'est pas touchee).
+        for f in factures_acompte:
+            await db.delete(f)
+        await db.flush()
+        await _creer_factures_acompte(db, devis)
+    else:
+        await _recompute_dates_factures(db, devis, factures_acompte)
+
+    await db.commit()
+    await db.refresh(devis)
+    return {
+        "id": devis.id,
+        "plan_paiement": _PLAN_LABEL.get(devis.plan_paiement, "100%"),
+        "date_debut_echeancier": devis.date_debut_echeancier.isoformat() if devis.date_debut_echeancier else None,
+        "intervalle_echeance_jours": devis.intervalle_echeance_jours,
+    }
+
+
+@router.get("/{devis_id}/historique")
+async def historique_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Journal des modifications sensibles du devis."""
+    return await journal_svc.historique(db, "devis", devis_id)
+
+
 @router.post("/{devis_id}/factures-maintenance", response_model=FactureGenereeInfo, status_code=201)
 async def generer_facture_maintenance_endpoint(
     devis_id: int, db: AsyncSession = Depends(get_db)
@@ -680,14 +869,33 @@ async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_d
     if (existantes.scalar() or 0) > 0:
         raise HTTPException(400, "Des factures existent deja pour ce devis")
 
+    creees = await _creer_factures_acompte(db, devis)
+    await db.commit()
+    for f in creees:
+        await db.refresh(f)
+    return [
+        FactureGenereeInfo(id=f.id, numero=f.numero, type=f.type.value, total_ttc=f.total_ttc)
+        for f in creees
+    ]
+
+
+async def _creer_factures_acompte(db: AsyncSession, devis: Devis) -> list[Facture]:
+    """Cree (sans commit) les factures d'acompte/solde du plan de paiement,
+    avec dates d'echeance etalees. Reutilise a la generation ET au changement
+    de plan via l'echeancier."""
     plan = devis.plan_paiement.value if devis.plan_paiement else "100%"
     parts = repartition_echeances(plan, devis.total_ttc)
     nb = len(parts)
 
+    # Dates d'echeance etalees : base (date_debut_echeancier ou date_emission)
+    # + n x intervalle. Restent editables ensuite par PATCH.
+    base = devis.date_debut_echeancier or devis.date_emission
+    dates = dates_echeancier(base, devis.intervalle_echeance_jours, nb)
+
     # Echeancier complet (commun a toutes les factures, pour affichage Word)
     plan_rows = [
-        {"label": label, "date": devis.date_emission.strftime("%d/%m/%Y"), "ttc": ttc}
-        for label, ttc in parts
+        {"label": label, "date": dates[i], "ttc": ttc}
+        for i, (label, ttc) in enumerate(parts)
     ]
 
     creees: list[Facture] = []
@@ -710,7 +918,7 @@ async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_d
             Echeance(
                 numero=e_idx + 1,
                 label=row["label"],
-                date_echeance=devis.date_emission,
+                date_echeance=row["date"],
                 montant_ht=_ht_from_ttc(row["ttc"]),
                 montant_ttc=row["ttc"],
                 payee=e_idx < idx,
@@ -723,8 +931,8 @@ async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_d
             type=type_f,
             statut=StatutFacture.BROUILLON,
             devis_id=devis.id,
-            date_emission=date.today(),
-            date_echeance=date.today(),
+            date_emission=dates[idx],
+            date_echeance=dates[idx],
             objet=objet,
             total_ht=ht,
             total_tva=tva,
@@ -735,13 +943,7 @@ async def generer_factures_devis(devis_id: int, db: AsyncSession = Depends(get_d
         db.add(facture)
         creees.append(facture)
 
-    await db.commit()
-    for f in creees:
-        await db.refresh(f)
-    return [
-        FactureGenereeInfo(id=f.id, numero=f.numero, type=f.type.value, total_ttc=f.total_ttc)
-        for f in creees
-    ]
+    return creees
 
 
 @router.post("/", response_model=DevisSummary, status_code=201)

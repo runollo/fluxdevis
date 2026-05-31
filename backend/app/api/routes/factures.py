@@ -7,11 +7,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.facture import Facture, StatutFacture, TypeFacture
+from app.models.facture import Facture, Echeance, StatutFacture, TypeFacture
 from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
+from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email_resend import Email, PieceJointe, envoyer_email, email_actif, EmailError
 from app.core.config import get_settings
@@ -359,3 +360,102 @@ async def supprimer_facture_definitif(facture_id: int, db: AsyncSession = Depend
         )
     await db.delete(facture)
     await db.commit()
+
+
+class FactureUpdate(BaseModel):
+    numero: str | None = None
+    date_emission: date | None = None
+    date_echeance: date | None = None
+    motif: str | None = None
+    confirme: bool = False
+
+
+class EcheanceDateIn(BaseModel):
+    numero: int
+    date_echeance: date
+
+
+class EcheancesUpdate(BaseModel):
+    echeances: list[EcheanceDateIn]
+    motif: str | None = None
+    confirme: bool = False
+
+
+@router.patch("/{facture_id}", response_model=FactureSummary)
+async def modifier_facture(
+    facture_id: int, data: FactureUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Modifie le numero et/ou les dates d'une facture. Tracee dans l'historique.
+
+    Une facture deja emise reste modifiable mais exige une confirmation explicite
+    (alerte cote interface) ; chaque changement est journalise.
+    """
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut != StatutFacture.BROUILLON and not data.confirme:
+        raise HTTPException(409, "Facture deja emise : confirmation requise (confirme=true)")
+
+    if data.numero is not None:
+        nouveau = data.numero.strip()
+        if not nouveau:
+            raise HTTPException(400, "Le numero ne peut pas etre vide")
+        if nouveau != facture.numero:
+            existe = (await db.execute(
+                select(func.count()).select_from(Facture).where(
+                    Facture.numero == nouveau, Facture.id != facture_id
+                )
+            )).scalar() or 0
+            if existe > 0:
+                raise HTTPException(400, f"Le numero '{nouveau}' est deja utilise")
+            journal_svc.enregistrer(db, "facture", facture_id, "numero",
+                                    facture.numero, nouveau, data.motif)
+            facture.numero = nouveau
+
+    if data.date_emission is not None and data.date_emission != facture.date_emission:
+        journal_svc.enregistrer(db, "facture", facture_id, "date_emission",
+                                facture.date_emission, data.date_emission, data.motif)
+        facture.date_emission = data.date_emission
+    if data.date_echeance is not None and data.date_echeance != facture.date_echeance:
+        journal_svc.enregistrer(db, "facture", facture_id, "date_echeance",
+                                facture.date_echeance, data.date_echeance, data.motif)
+        facture.date_echeance = data.date_echeance
+
+    await db.commit()
+    await db.refresh(facture)
+    return facture
+
+
+@router.patch("/{facture_id}/echeances")
+async def modifier_echeances_facture(
+    facture_id: int, data: EcheancesUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Modifie les dates d'echeance ligne par ligne (echeancier editable)."""
+    result = await db.execute(
+        select(Facture).where(Facture.id == facture_id)
+        .options(selectinload(Facture.echeances))
+    )
+    facture = result.scalar_one_or_none()
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut != StatutFacture.BROUILLON and not data.confirme:
+        raise HTTPException(409, "Facture deja emise : confirmation requise (confirme=true)")
+
+    par_numero = {e.numero: e for e in facture.echeances}
+    for maj in data.echeances:
+        ech = par_numero.get(maj.numero)
+        if ech is None:
+            continue
+        if ech.date_echeance != maj.date_echeance:
+            journal_svc.enregistrer(db, "facture", facture_id, f"echeance[{maj.numero}].date",
+                                    ech.date_echeance, maj.date_echeance, data.motif)
+            ech.date_echeance = maj.date_echeance
+
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/{facture_id}/historique")
+async def historique_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Journal des modifications sensibles de la facture."""
+    return await journal_svc.historique(db, "facture", facture_id)

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,11 @@ interface OptionLigne {
 interface Ligne { designation: string; quantite: number; prix_unitaire_vente: string; }
 interface ArticleOffert { designation: string; prix_vente: string; }
 interface FactureLien {
-  id: number; numero: string; type: string; statut: string; total_ttc: string; date_emission: string;
+  id: number; numero: string; type: string; statut: string; total_ttc: string; date_emission: string; date_echeance: string;
+}
+interface HistoriqueLigne {
+  id: number; champ: string; ancienne_valeur: string | null; nouvelle_valeur: string | null;
+  motif: string | null; auteur: string | null; cree_le: string | null;
 }
 interface Maintenance {
   recurrent_ht: string; recurrent_ttc: string; a_facturer: boolean; leasing: boolean;
@@ -29,6 +33,7 @@ interface DevisDetail {
   id: number; reference: string; statut: string;
   version: number; version_active: boolean; versions: VersionInfo[];
   date_emission: string; date_validite: string; date_mise_en_ligne: string | null;
+  date_debut_echeancier: string | null; intervalle_echeance_jours: number;
   maintenance: Maintenance;
   client_raison_sociale: string; client_adresse: string | null;
   client_cp: string | null; client_ville: string | null;
@@ -51,6 +56,7 @@ const STATUTS = [
   { value: "refuse", label: "Refuse" },
   { value: "expire", label: "Expire" },
 ];
+const PLANS = ["100%", "50/50", "33/33/33", "50/25/25", "25/25/25/25"];
 const STATUT_COLORS: Record<string, string> = {
   brouillon: "bg-gray-100 text-gray-700", envoye: "bg-blue-100 text-blue-700",
   accepte: "bg-green-100 text-green-700", refuse: "bg-red-100 text-red-700",
@@ -75,12 +81,28 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string }> }) {
+function libelleChamp(c: string): string {
+  const map: Record<string, string> = {
+    reference: "Numero de devis",
+    date_emission: "Date d'emission",
+    date_validite: "Date de validite",
+    date_debut_echeancier: "Date de depart echeancier",
+    intervalle_echeance_jours: "Intervalle (jours)",
+    plan_paiement: "Plan de paiement",
+    numero: "Numero de facture",
+    date_echeance: "Date d'echeance",
+  };
+  return map[c] || c;
+}
+
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string; maj?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
+  let historique: HistoriqueLigne[] = [];
   if (id) {
     try { d = await serverFetch<DevisDetail>(`/devis/${id}/detail`); } catch {}
+    try { historique = await serverFetch<HistoriqueLigne[]>(`/devis/${id}/historique`); } catch {}
   }
 
   if (!d) {
@@ -128,6 +150,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
         </div>
       )}
 
+      {params.maj === "1" && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          Modification enregistree (tracee dans l&apos;historique).
+        </div>
+      )}
+
       {/* Actions */}
       <div className="bg-white border rounded-lg p-4 mb-4 flex flex-col sm:flex-row sm:items-end gap-4">
         <form action={changerStatut} className="flex items-end gap-2">
@@ -167,6 +195,95 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           Supprimer ce devis
         </Link>
       </div>
+
+      {/* Numerotation, dates & echeancier */}
+      <details className="bg-white border rounded-lg p-4 mb-4">
+        <summary className="text-sm font-semibold text-gray-500 uppercase cursor-pointer">
+          Numerotation, dates & echeancier
+        </summary>
+        <div className="mt-4 space-y-5">
+          {d.statut !== "brouillon" && (
+            <div className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+              Ce devis est deja emis. Toute modification reste possible mais sera
+              enregistree dans l&apos;historique ci-dessous.
+            </div>
+          )}
+
+          {/* Numero de devis */}
+          <form action={modifierReferenceDevis} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="devis_id" value={d.id} />
+            <div className="flex-1 min-w-[200px]">
+              <label className="block text-xs text-gray-400 mb-1">Numero de devis</label>
+              <input name="reference" defaultValue={d.reference} required
+                className="w-full border rounded px-3 py-2 text-sm font-mono" />
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <label className="block text-xs text-gray-400 mb-1">Motif (facultatif)</label>
+              <input name="motif" placeholder="ex. ancienne nomenclature"
+                className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <button type="submit" className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+              Enregistrer le numero
+            </button>
+          </form>
+
+          {/* Dates du devis */}
+          <form action={modifierDatesDevis} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="devis_id" value={d.id} />
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Date d&apos;emission</label>
+              <input type="date" name="date_emission" defaultValue={d.date_emission}
+                className="border rounded px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Valable jusqu&apos;au</label>
+              <input type="date" name="date_validite" defaultValue={d.date_validite}
+                className="border rounded px-3 py-2 text-sm" />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label className="block text-xs text-gray-400 mb-1">Motif (facultatif)</label>
+              <input name="motif" className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <button type="submit" className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+              Enregistrer les dates
+            </button>
+          </form>
+
+          {/* Echeancier (plan + date de depart + intervalle) */}
+          <form action={modifierEcheancier} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="devis_id" value={d.id} />
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Plan de paiement</label>
+              <select name="plan_paiement" defaultValue={d.plan_paiement ?? "100%"}
+                className="border rounded px-3 py-2 text-sm">
+                {PLANS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Date de depart echeancier</label>
+              <input type="date" name="date_debut_echeancier" defaultValue={d.date_debut_echeancier ?? d.date_emission}
+                className="border rounded px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Intervalle (jours)</label>
+              <input type="number" name="intervalle_echeance_jours" min={1} defaultValue={d.intervalle_echeance_jours}
+                className="w-24 border rounded px-3 py-2 text-sm" />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label className="block text-xs text-gray-400 mb-1">Motif (facultatif)</label>
+              <input name="motif" className="w-full border rounded px-3 py-2 text-sm" />
+            </div>
+            <button type="submit" className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+              Appliquer l&apos;echeancier
+            </button>
+          </form>
+          <p className="text-xs text-gray-400">
+            Les dates d&apos;echeance des factures en brouillon se recalculent automatiquement
+            (date de depart + intervalle). Changer le plan regenere les factures d&apos;acompte
+            en brouillon.
+          </p>
+        </div>
+      </details>
 
       {/* Versions du devis (si plusieurs) */}
       {d.versions && d.versions.length > 1 && (
@@ -350,6 +467,8 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium">{eur(f.total_ttc)}</span>
+                  <Link href={`/factures/editer?id=${f.id}&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
+                    className="text-[#1A355E] hover:underline text-sm font-medium">Modifier</Link>
                   <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline text-sm font-medium">Telecharger</a>
                   <form action={envoyerFacture} className="inline">
                     <input type="hidden" name="facture_id" value={f.id} />
@@ -370,6 +489,31 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           </ul>
         )}
       </div>
+
+      {/* Historique des modifications */}
+      {historique.length > 0 && (
+        <div className="bg-white border rounded-lg p-4 mt-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+            Historique des modifications ({historique.length})
+          </h2>
+          <ul className="divide-y text-sm">
+            {historique.map(h => (
+              <li key={h.id} className="py-2">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium text-gray-800">{libelleChamp(h.champ)}</span>
+                  <span className="text-gray-400 line-through">{h.ancienne_valeur ?? "(vide)"}</span>
+                  <span className="text-gray-400">&rarr;</span>
+                  <span className="text-gray-800">{h.nouvelle_valeur ?? "(vide)"}</span>
+                </div>
+                <div className="text-xs text-gray-400">
+                  {h.cree_le ? new Date(h.cree_le).toLocaleString("fr-FR") : ""}
+                  {h.motif ? ` — ${h.motif}` : ""}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

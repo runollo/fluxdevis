@@ -366,6 +366,81 @@ export async function definirMiseEnLigne(formData: FormData) {
 }
 
 
+export async function modifierReferenceDevis(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  const body = {
+    reference: (formData.get("reference") as string) || "",
+    motif: (formData.get("motif") as string) || null,
+    confirme: true,
+  };
+  try {
+    await serverPatch(`/devis/${id}/reference`, body);
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(`/devis/detail?id=${id}`);
+}
+
+
+export async function modifierDatesDevis(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  const body = {
+    date_emission: (formData.get("date_emission") as string) || null,
+    date_validite: (formData.get("date_validite") as string) || null,
+    motif: (formData.get("motif") as string) || null,
+    confirme: true,
+  };
+  try {
+    await serverPatch(`/devis/${id}/dates`, body);
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(`/devis/detail?id=${id}`);
+}
+
+
+export async function modifierEcheancier(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  const intervalle = formData.get("intervalle_echeance_jours") as string;
+  const body: Record<string, unknown> = {
+    date_debut_echeancier: (formData.get("date_debut_echeancier") as string) || null,
+    intervalle_echeance_jours: intervalle ? Number(intervalle) : null,
+    plan_paiement: (formData.get("plan_paiement") as string) || null,
+    motif: (formData.get("motif") as string) || null,
+    confirme: true,
+  };
+  try {
+    await serverPatch(`/devis/${id}/echeancier`, body);
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(`/devis/detail?id=${id}`);
+}
+
+
+export async function modifierFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  const body: Record<string, unknown> = {
+    numero: (formData.get("numero") as string) || null,
+    date_emission: (formData.get("date_emission") as string) || null,
+    date_echeance: (formData.get("date_echeance") as string) || null,
+    motif: (formData.get("motif") as string) || null,
+    confirme: true,
+  };
+  try {
+    await serverPatch(`/factures/${id}`, body);
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(ajouterParam(retour, "maj", "1"));
+}
+
+
 export async function genererFactureMaintenance(formData: FormData) {
   const id = formData.get("devis_id") as string;
   if (!id) redirect("/devis");

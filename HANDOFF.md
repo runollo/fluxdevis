@@ -1,7 +1,31 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date de creation : 2026-05-29 — Derniere mise a jour : 2026-05-31
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-01
+
+---
+
+## POINT DE REPRISE (2026-06-01, a reprendre le 2026-06-02)
+
+Session du 2026-06-01 (phase Shopify, cote DEVIS) : TERMINEE et commitee.
+- `f227f59` : devis Shopify — encart "Abonnement Shopify a la charge du client"
+  (souscrit en son nom, ni inclus ni facture par FluXweb), socle adapte, recap
+  "maintenance & exploitation". Cf. section "Phase Shopify".
+- `1f6a880` : annexe contenu des 8 packs de maintenance
+  (`backend/app/data/packs_maintenance.py`, source de verite unique, cumulative) +
+  bloc "CE QUE COMPREND VOTRE MAINTENANCE" sur le devis Word. Cf. section
+  "Annexe contenu des packs de maintenance".
+
+A FAIRE DEMAIN (par ordre de priorite) :
+1. FACTURES Shopify (`backend/app/services/generation_facture.py`) : meme logique de
+   wording que le devis — "maintenance & exploitation" (et non "hebergement") pour
+   Shopify ; verifier qu'aucune ligne ne sous-entend un hebergement porte par FluXweb ;
+   verifier l'objet de la facture maintenance Shopify. C'est la derniere brique de la
+   parite Webflow/Shopify.
+2. (Optionnel) Exposer l'annexe maintenance dans l'UI (page catalogue / fiche pack) en
+   reutilisant `contenu_cumule(code)` — utile pour repondre au client en direct.
+
+Etat git : working tree propre, branche `main`, HEAD = ce commit.
 
 ---
 

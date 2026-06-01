@@ -427,6 +427,21 @@ RESTE A FAIRE : adapter la generation des FACTURES Shopify (`generation_facture.
 objet/mentions "maintenance & exploitation" vs "hebergement", verifier qu'aucune ligne
 ne sous-entend un hebergement porte par FluXweb pour une facture Shopify.
 
+### Annexe contenu des packs de maintenance (fait 2026-06-01)
+Source de verite UNIQUE du descriptif des packs : `backend/app/data/packs_maintenance.py`
+(nouveau module `app/data/`). Contient les 8 packs (WF_MAINT_* + SHOPIFY_MAINT_*) avec,
+par niveau : famille, accroche, prestations PROPRES, delai de reponse, `herite_de`. Les
+packs sont CUMULATIFS (Essentielle -> Standard -> Pro -> Premium) ; `contenu_cumule(code)`
+resout la chaine d'heritage et renvoie la liste cumulee des prestations + le `rappel`
+Shopify (abonnement a la charge du client). Les CHAINES de texte sont accentuees (affichage
+client) ; commentaires/identifiants sans accents (convention projet).
+Exploitation : le devis Word affiche un bloc "CE QUE COMPREND VOTRE MAINTENANCE (NIVEAU)"
+(accroche + prestations cumulees titre+descriptif + delai), via `_add_detail_maintenance()`
+dans `generation_devis.py` (insere apres l'abonnement mensuel, mappe sur `opt.code` du
+snapshot du devis). S'affiche des qu'un pack est present, independamment du montant.
+Verifie sur devis 17 (Shopify Premium) et 16 (Webflow Standard).
+A reutiliser pour : repondre aux questions client, et eventuellement une page UI catalogue.
+
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant
 - A implementer si besoin plus tard (admin, commercial, apporteur)

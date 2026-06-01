@@ -14,6 +14,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 from io import BytesIO
 
+from app.data.packs_maintenance import contenu_cumule
 from app.services.echeances import repartir_au_centime
 from app.services.facturation_maintenance import (
     montant_recurrent_brut_ht, montant_recurrent_ht,
@@ -172,6 +173,10 @@ def generer_devis(devis, societe) -> BytesIO:
 
     if s["mensuel_net"] > 0:
         _add_abonnement(doc, devis, s)
+        spacer(doc, 8)
+
+    # Detail du contenu du pack de maintenance choisi (independant du montant).
+    if _add_detail_maintenance(doc, devis):
         spacer(doc, 8)
 
     # Encart Shopify : abonnement plateforme a la charge du client (indep. du mensuel).
@@ -522,6 +527,64 @@ def _add_abonnement_shopify(doc, societe):
     run(p, f"n'est ni inclus ni facturé par {marque}", bold=True, size=8, color=C_TEXT)
     run(p, ". Nous vous accompagnons dans le choix du plan le plus adapté à votre "
            "activité.", size=8, color=C_TEXT)
+
+
+def _add_detail_maintenance(doc, devis) -> bool:
+    """Detail du/des pack(s) de maintenance choisi(s) (cf. annexe contenu).
+
+    Repond a la question client "qu'est-ce qui est inclus dans la maintenance X ?".
+    Liste les prestations CUMULEES (titre + descriptif) et le delai de reponse, a partir
+    de `app.data.packs_maintenance`. Renvoie True si au moins un bloc a ete ecrit.
+    """
+    packs = []
+    for opt in sorted(devis.options or [], key=lambda x: x.ordre):
+        if (opt.type_ligne or "").upper() != "PACK":
+            continue
+        c = contenu_cumule((opt.code or "").strip())
+        if c:
+            packs.append(c)
+    if not packs:
+        return False
+
+    for i, c in enumerate(packs):
+        if i > 0:
+            spacer(doc, 6)
+
+        tbl_head = doc.add_table(rows=1, cols=1)
+        tbl_no_spacing(tbl_head)
+        cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+        cell_text(tbl_head.rows[0].cells[0],
+                  f"CE QUE COMPREND VOTRE MAINTENANCE ({c['niveau'].upper()})",
+                  bold=True, size=10, color=C_WHITE)
+
+        tbl = doc.add_table(rows=1, cols=1)
+        tbl_no_spacing(tbl)
+        full_tbl_borders(tbl)
+        cell = tbl.rows[0].cells[0]
+        cell_w(cell, 18)
+
+        # Accroche du niveau (+ mention socle obligatoire le cas echeant)
+        p = cell.paragraphs[0]
+        p_fmt(p, before=2, after=2)
+        run(p, c["accroche"], italic=True, size=8, color=C_NAVY)
+        if c["socle_obligatoire"]:
+            run(p, "  (socle inclus)", size=7, color=C_AHEAD, italic=True)
+
+        # Prestations cumulees : intitule en gras + descriptif
+        for presta in c["prestations"]:
+            p = cell.add_paragraph()
+            p_fmt(p, before=1, after=0)
+            run(p, "•  ", size=8, color=C_NAVY)
+            run(p, presta["titre"] + " : ", bold=True, size=8, color=C_TEXT)
+            run(p, presta["detail"], size=8, color=C_TEXT)
+
+        # Delai de reponse
+        p = cell.add_paragraph()
+        p_fmt(p, before=3, after=2)
+        run(p, "Délai de réponse : ", bold=True, size=8, color=C_NAVY)
+        run(p, c["delai_reponse"], size=8, color=C_TEXT)
+
+    return True
 
 
 def _recap_sous_titre(doc, texte):

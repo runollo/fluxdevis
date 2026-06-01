@@ -1,7 +1,7 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date : 2026-05-29
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-05-31
 
 ---
 
@@ -62,8 +62,18 @@ Branche : `main`
 | Generation docs | python-docx (Word) |
 | Virtualenv | `backend/.venv/` |
 
-### Point critique : PAS de JavaScript client
-Les **Client Components React ne fonctionnent pas** sur ce setup (hydratation cassee quand on accede depuis un autre PC du reseau). Toutes les pages sont des **Server Components purs** avec formulaires HTML natifs. Les boutons onClick, useState, useEffect ne marchent pas. Utiliser uniquement :
+### MAJ 2026-05-31 : les Client Components fonctionnent (via allowedDevOrigins)
+CORRECTION de la note ci-dessous : le probleme d'hydratation sur le LAN venait de
+l'absence de `allowedDevOrigins` dans `next.config`. Depuis qu'il contient
+`allowedDevOrigins: ["192.168.1.30"]`, les Client Components React marchent depuis le
+reseau (le simulateur a ete refondu en temps reel). On PEUT donc utiliser onClick/
+useState si besoin. Cela dit, le reste de l'app reste volontairement en **Server
+Components + Server Actions** (pattern simple, robuste, SEO/no-JS friendly) — toute
+nouvelle page devrait suivre ce pattern par defaut sauf besoin reel d'interactivite.
+
+### (Ancienne note, conservee pour contexte) Server Components purs
+Historiquement les Client Components semblaient casses sur le LAN. Le pattern par defaut
+reste donc :
 - `<form action={serverAction}>` pour les soumissions
 - `<Link href="...">` pour la navigation
 - `<select defaultValue>` avec `method="GET"` pour les choix
@@ -136,6 +146,9 @@ Format : `D-XXXX-AAMMJJHHMM` (ex: `D-ASKV-2605281430`)
 - Supprime formes juridiques (SAS, SARL...) et articles (Le, La, Les)
 - Timestamp a la minute (aucun doublon possible)
 - Le numero sequentiel interne reste en BDD mais n'apparait pas sur le document
+- MAJ 2026-05-31 : la reference (devis ET facture) est desormais SURCHARGEABLE
+  manuellement (cas legacy / ancienne nomenclature) via `PATCH /api/devis/{id}/reference`
+  et `PATCH /api/factures/{id}` (controle d'unicite). Voir la section session 2026-05-31.
 
 ### Donnees importees
 - 1 societe (BLUELINK INNOVATIONS)
@@ -388,6 +401,31 @@ Le total reste net du cadeau.
 NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
+### Phase Shopify — abonnement a la charge du client (devis fait 2026-06-01, factures A FAIRE)
+Decision metier (Bruno) : dans un contrat Shopify, l'abonnement Shopify (plateforme,
+hebergement, infra, paiement) est souscrit et regle DIRECTEMENT par le client, EN SON
+NOM, et n'est NI inclus NI facture par FluXweb (la boutique genere du CA -> trop risque
+de porter l'abonnement au nom de FluXweb). A distinguer de Webflow ou FluXweb porte
+l'hebergement (31 EUR/mois inclus dans le `prix_hebergement` des packs `WF_MAINT_*`).
+Cote tarif c'est deja correct : les packs `SHOPIFY_MAINT_*` ont `prix_hebergement = 0`.
+
+Fait cote DEVIS (`backend/app/services/generation_devis.py`) :
+- helper `_is_shopify(devis)` (sur `offre_type_site`) ;
+- nouvel encart `_add_abonnement_shopify()` "ABONNEMENT SHOPIFY (a votre charge)" affiche
+  pour tout devis Shopify, INDEPENDAMMENT du mensuel maintenance (insere apres
+  `_add_abonnement`, avant le recap financier). Texte SANS montant (tarifs Shopify
+  variables, hors maitrise FluXweb), mentions juridiques en gras ("en votre nom",
+  "ni inclus ni facture par <marque>") ;
+- socle commun adapte : pour Shopify, la ligne "Hebergement — Inclus..." devient
+  "Hebergement & infrastructure — Assures par la plateforme Shopify (voir encart)" ;
+- recap financier : sous-titre "maintenance & hebergement" -> "maintenance & exploitation"
+  pour Shopify.
+Verifie end-to-end (devis Shopify id 17 OK, non-regression Webflow id 16 OK).
+
+RESTE A FAIRE : adapter la generation des FACTURES Shopify (`generation_facture.py`) —
+objet/mentions "maintenance & exploitation" vs "hebergement", verifier qu'aucune ligne
+ne sous-entend un hebergement porte par FluXweb pour une facture Shopify.
 
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant

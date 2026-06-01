@@ -163,7 +163,7 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_creation(doc, devis, s)
     spacer(doc, 8)
 
-    _add_socle(doc)
+    _add_socle(doc, devis)
     spacer(doc, 8)
 
     if s["avantages_total"] > 0:
@@ -172,6 +172,11 @@ def generer_devis(devis, societe) -> BytesIO:
 
     if s["mensuel_net"] > 0:
         _add_abonnement(doc, devis, s)
+        spacer(doc, 8)
+
+    # Encart Shopify : abonnement plateforme a la charge du client (indep. du mensuel).
+    if _is_shopify(devis):
+        _add_abonnement_shopify(doc, societe)
         spacer(doc, 8)
 
     _add_recap_financier(doc, devis, s)
@@ -252,18 +257,32 @@ def _items_offerts_designations(devis) -> set[str]:
     return {(a.designation or "").strip() for a in (devis.articles_offerts or [])}
 
 
-def _add_socle(doc):
-    """Socle commun a toutes les offres (reassurance : ce qui est toujours inclus)."""
+def _is_shopify(devis) -> bool:
+    """Vrai si le devis porte sur une offre Shopify (vs Webflow)."""
+    return "shopify" in (devis.offre_type_site or "").lower()
+
+
+def _add_socle(doc, devis):
+    """Socle commun a toutes les offres (reassurance : ce qui est toujours inclus).
+
+    Pour Shopify, l'hebergement est assure par la plateforme (abonnement a la charge
+    du client, cf. encart dedie) et non porte par FluXweb : la ligne est adaptee.
+    """
+    socle = list(SOCLE_COMMUN)
+    if _is_shopify(devis):
+        socle[0] = ("Hébergement & infrastructure",
+                    "Assurés par la plateforme Shopify (voir encart dédié ci-dessous)")
+
     tbl_head = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl_head)
     cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
     cell_text(tbl_head.rows[0].cells[0], "INCLUS DANS TOUTES NOS OFFRES",
               bold=True, size=10, color=C_WHITE)
 
-    tbl = doc.add_table(rows=len(SOCLE_COMMUN), cols=2)
+    tbl = doc.add_table(rows=len(socle), cols=2)
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
-    for i, (item, detail) in enumerate(SOCLE_COMMUN):
+    for i, (item, detail) in enumerate(socle):
         cell_w(tbl.rows[i].cells[0], 5)
         cell_w(tbl.rows[i].cells[1], 13)
         cell_text(tbl.rows[i].cells[0], item, bold=True, size=8, color=C_NAVY)
@@ -464,6 +483,47 @@ def _add_abonnement(doc, devis, s):
         italic=True, size=7, color=C_AHEAD)
 
 
+def _add_abonnement_shopify(doc, societe):
+    """Encart Shopify : l'abonnement plateforme est a la charge du client.
+
+    Point juridique central des contrats Shopify : la boutique genere du CA, donc
+    l'abonnement Shopify est souscrit et regle directement par le client, en son nom.
+    Il n'est ni porte ni facture par FluXweb (decision metier validee par Bruno).
+    Aucun montant n'est inscrit (tarifs Shopify variables et hors maitrise FluXweb).
+    """
+    marque = (societe.marque if societe and societe.marque else None) or \
+             (societe.nom if societe else "FluXweb")
+
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "ABONNEMENT SHOPIFY (à votre charge)",
+              bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    cell = tbl.rows[0].cells[0]
+    cell_w(cell, 18)
+
+    p = cell.paragraphs[0]
+    p_fmt(p, before=2, after=2)
+    run(p, "Votre boutique fonctionne sur la plateforme Shopify, qui assure "
+           "l'hébergement, l'infrastructure technique, la sécurité et le moteur de "
+           "paiement. Cet abonnement est ", size=8, color=C_TEXT)
+    run(p, "souscrit et réglé directement par vos soins, en votre nom, auprès de "
+           "Shopify", bold=True, size=8, color=C_TEXT)
+    run(p, ". Il vous garantit la pleine propriété et la maîtrise de votre boutique, "
+           "de vos données et de vos moyens de paiement.", size=8, color=C_TEXT)
+
+    p = cell.add_paragraph()
+    p_fmt(p, before=2, after=2)
+    run(p, "Il est indépendant de la présente proposition et ", size=8, color=C_TEXT)
+    run(p, f"n'est ni inclus ni facturé par {marque}", bold=True, size=8, color=C_TEXT)
+    run(p, ". Nous vous accompagnons dans le choix du plan le plus adapté à votre "
+           "activité.", size=8, color=C_TEXT)
+
+
 def _recap_sous_titre(doc, texte):
     """Sous-titre d'un bloc du recapitulatif financier."""
     p = doc.add_paragraph()
@@ -526,7 +586,10 @@ def _add_recap_financier(doc, devis, s):
     # --- Bloc abonnement mensuel ---
     if s["mensuel_net"] > 0:
         spacer(doc, 4)
-        _recap_sous_titre(doc, "Abonnement mensuel (maintenance & hébergement)")
+        libelle_abo = ("Abonnement mensuel (maintenance & exploitation)"
+                       if _is_shopify(devis)
+                       else "Abonnement mensuel (maintenance & hébergement)")
+        _recap_sous_titre(doc, libelle_abo)
         mensuel_net = s["mensuel_net"]
         mensuel_tva = _q(mensuel_net * TVA_RATE)
         mensuel_ttc = _q(mensuel_net * (D("1") + TVA_RATE))

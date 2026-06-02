@@ -36,6 +36,7 @@ class GenererFactureRequest(BaseModel):
     devis_ref: str = ""
     prestation: str = ""
     periode: str | None = None
+    est_shopify: bool = False  # hebergement porte par la plateforme (a la charge du client)
     # Echeancier
     echeances: list[dict] = []
     idx_echeance: int = 0
@@ -82,6 +83,7 @@ async def generer_facture_endpoint(
         devis_ref=req.devis_ref,
         prestation=req.prestation,
         periode=req.periode,
+        est_shopify=req.est_shopify,
         echeances=req.echeances,
         idx_echeance=req.idx_echeance,
     )

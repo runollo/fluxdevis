@@ -140,8 +140,12 @@ async def generer_facture_maintenance(
     # Suffixe de numero base sur le total des factures du devis (unicite)
     total_factures = await _nb_factures(db, devis.id)
     numero = generer_reference_facture(devis.client_raison_sociale, num_facture=total_factures + 1)
+    # Wording aligne sur le recap du devis : pour Shopify l'hebergement est porte
+    # par la plateforme (abonnement a la charge du client), donc "exploitation"
+    # plutot que "hebergement" — aucune ligne ne sous-entend un hebergement FluXweb.
+    nature = "exploitation" if devis.est_shopify else "hébergement"
     objet = (
-        f"Maintenance {devis.offre_nom} — periode du "
+        f"Maintenance & {nature} — {devis.offre_nom} — période du "
         f"{debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
     )
 

@@ -168,6 +168,7 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
         montant_ht=facture.total_ht,
         devis_ref=devis.reference if devis else "",
         periode=periode,
+        est_shopify=devis.est_shopify if devis else False,
         echeances=ech_rows,
         idx_echeance=idx_echeance,
     )

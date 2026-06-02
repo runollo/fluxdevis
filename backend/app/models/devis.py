@@ -141,6 +141,16 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     )
     factures: Mapped[list["Facture"]] = relationship(back_populates="devis")
 
+    @property
+    def est_shopify(self) -> bool:
+        """Vrai si le devis porte sur une offre Shopify (vs Webflow).
+
+        Source unique de la detection : pilote le wording "maintenance &
+        exploitation" (Shopify, hebergement assure par la plateforme) vs
+        "maintenance & hebergement" (Webflow), sur le devis comme sur la facture.
+        """
+        return "shopify" in (self.offre_type_site or "").lower()
+
 
 class DevisLigne(Base):
     """Ligne de prestation sur mesure dans un devis (3 max dans l'Excel actuel)."""

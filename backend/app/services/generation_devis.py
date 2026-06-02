@@ -263,8 +263,11 @@ def _items_offerts_designations(devis) -> set[str]:
 
 
 def _is_shopify(devis) -> bool:
-    """Vrai si le devis porte sur une offre Shopify (vs Webflow)."""
-    return "shopify" in (devis.offre_type_site or "").lower()
+    """Vrai si le devis porte sur une offre Shopify (vs Webflow).
+
+    Delegue a `Devis.est_shopify` (source unique partagee avec la facture).
+    """
+    return bool(getattr(devis, "est_shopify", False))
 
 
 def _add_socle(doc, devis):

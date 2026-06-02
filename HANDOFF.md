@@ -1,31 +1,29 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-01
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-02
 
 ---
 
-## POINT DE REPRISE (2026-06-01, a reprendre le 2026-06-02)
+## POINT DE REPRISE (2026-06-02)
 
-Session du 2026-06-01 (phase Shopify, cote DEVIS) : TERMINEE et commitee.
-- `f227f59` : devis Shopify — encart "Abonnement Shopify a la charge du client"
-  (souscrit en son nom, ni inclus ni facture par FluXweb), socle adapte, recap
-  "maintenance & exploitation". Cf. section "Phase Shopify".
-- `1f6a880` : annexe contenu des 8 packs de maintenance
-  (`backend/app/data/packs_maintenance.py`, source de verite unique, cumulative) +
-  bloc "CE QUE COMPREND VOTRE MAINTENANCE" sur le devis Word. Cf. section
-  "Annexe contenu des packs de maintenance".
+Parite Webflow/Shopify ACHEVEE (devis + factures). La phase Shopify est terminee.
+- `f227f59` / `1f6a880` (2026-06-01) : devis Shopify (encart abonnement a charge du
+  client, socle adapte, recap "maintenance & exploitation") + annexe des 8 packs de
+  maintenance. Cf. sections "Phase Shopify" et "Annexe contenu des packs".
+- (2026-06-02) : FACTURES Shopify — detection en source unique `Devis.est_shopify`,
+  objet de la facture de maintenance aligne sur le devis ("Maintenance & exploitation"
+  vs "& hebergement"), mention de bas de facture rappelant l'abonnement plateforme a la
+  charge du client (Shopify), propagation via `routes/factures.py` et `routes/generation.py`.
+  Cf. section "Phase Shopify" (volet FACTURES). Verifie (Word 2 variantes, imports OK).
 
-A FAIRE DEMAIN (par ordre de priorite) :
-1. FACTURES Shopify (`backend/app/services/generation_facture.py`) : meme logique de
-   wording que le devis — "maintenance & exploitation" (et non "hebergement") pour
-   Shopify ; verifier qu'aucune ligne ne sous-entend un hebergement porte par FluXweb ;
-   verifier l'objet de la facture maintenance Shopify. C'est la derniere brique de la
-   parite Webflow/Shopify.
-2. (Optionnel) Exposer l'annexe maintenance dans l'UI (page catalogue / fiche pack) en
-   reutilisant `contenu_cumule(code)` — utile pour repondre au client en direct.
+RESTE / OPTIONNEL (pas de dependance, a faire quand utile) :
+1. Exposer l'annexe maintenance dans l'UI (page catalogue / fiche pack) en reutilisant
+   `contenu_cumule(code)` de `backend/app/data/packs_maintenance.py` — utile pour repondre
+   au client en direct.
+2. Envoi email (Resend) : code prevu mais NON ACTIVE. Cf. section "Envoi email (Resend)".
 
-Etat git : working tree propre, branche `main`, HEAD = ce commit.
+Etat git : a committer (modifs factures Shopify), branche `main`.
 
 ---
 
@@ -426,7 +424,7 @@ NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
 
-### Phase Shopify — abonnement a la charge du client (devis fait 2026-06-01, factures A FAIRE)
+### Phase Shopify — abonnement a la charge du client (devis 2026-06-01, factures 2026-06-02) TERMINEE
 Decision metier (Bruno) : dans un contrat Shopify, l'abonnement Shopify (plateforme,
 hebergement, infra, paiement) est souscrit et regle DIRECTEMENT par le client, EN SON
 NOM, et n'est NI inclus NI facture par FluXweb (la boutique genere du CA -> trop risque
@@ -447,9 +445,22 @@ Fait cote DEVIS (`backend/app/services/generation_devis.py`) :
   pour Shopify.
 Verifie end-to-end (devis Shopify id 17 OK, non-regression Webflow id 16 OK).
 
-RESTE A FAIRE : adapter la generation des FACTURES Shopify (`generation_facture.py`) —
-objet/mentions "maintenance & exploitation" vs "hebergement", verifier qu'aucune ligne
-ne sous-entend un hebergement porte par FluXweb pour une facture Shopify.
+Fait cote FACTURES (2026-06-02) — parite Webflow/Shopify achevee :
+- detection Shopify deplacee en SOURCE UNIQUE sur le modele : `Devis.est_shopify`
+  (property sur `offre_type_site`). `generation_devis._is_shopify` delegue desormais
+  a cette property ; partagee avec la facturation.
+- objet de la facture de maintenance (`facturation_maintenance.generer_facture_maintenance`)
+  aligne sur le recap du devis : "Maintenance & exploitation — <offre> — periode..."
+  pour Shopify, "Maintenance & hebergement — ..." pour Webflow (au lieu du neutre
+  "Maintenance <offre> — periode...").
+- document Word (`generation_facture.py`) : `FactureData.est_shopify` ajoute ; pour une
+  facture de maintenance Shopify, mention de bas de page rappelant que l'abonnement
+  plateforme (hebergement, infra, paiement) est souscrit/regle par le client en son nom,
+  ni inclus ni facture par FluXweb. Champ propage par `routes/factures.py` (depuis le
+  devis) et `routes/generation.py` (endpoint ad hoc, defaut False).
+- factures d'acompte/solde : objet "Acompte i/n sur devis <ref> — <offre>" deja neutre
+  (creation one-shot), aucune mention d'hebergement -> rien a changer.
+Verifie : generation Word des 2 variantes OK, property/_is_shopify OK, imports OK.
 
 ### Annexe contenu des packs de maintenance (fait 2026-06-01)
 Source de verite UNIQUE du descriptif des packs : `backend/app/data/packs_maintenance.py`

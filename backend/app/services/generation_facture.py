@@ -68,6 +68,9 @@ class FactureData:
         self.devis_ref: str = kwargs.get("devis_ref", "")
         self.prestation: str = kwargs.get("prestation", "")
         self.periode: str | None = kwargs.get("periode")
+        # Pour Shopify : l'hebergement/abonnement plateforme est a la charge du
+        # client (souscrit en son nom), jamais porte ni facture par FluXweb.
+        self.est_shopify: bool = kwargs.get("est_shopify", False)
 
         # Echeancier (acompte)
         self.echeances: list[dict] = kwargs.get("echeances", [])
@@ -248,6 +251,13 @@ def _add_mentions(doc, data):
     ]
     if data.type_facture == "maintenance":
         mentions.append("Abonnement mensuel reconductible tacitement.")
+        if data.est_shopify:
+            mentions.append(
+                "L’abonnement de la plateforme Shopify (hébergement, "
+                "infrastructure, moteur de paiement) est souscrit et réglé "
+                "directement par le client, en son nom : il n’est ni inclus "
+                "dans cette facture ni facturé par FluXweb."
+            )
     for m in mentions:
         p = doc.add_paragraph()
         p_fmt(p, before=0, after=1)

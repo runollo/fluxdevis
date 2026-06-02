@@ -6,10 +6,16 @@ from sqlalchemy import (
     String, Numeric, Integer, Boolean, Date, ForeignKey, Text,
     Enum as SAEnum,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
+
+# Type de document : un devis (contractuel, signature/IBAN/echeancier) ou une
+# proposition budgetaire (estimation commerciale non contractuelle, document court).
+DOC_DEVIS = "devis"
+DOC_PROPOSITION = "proposition_budgetaire"
 
 
 class ModeReglement(str, enum.Enum):
@@ -43,6 +49,13 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     reference: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+
+    # Type de document : "devis" (defaut, contractuel) ou "proposition_budgetaire".
+    # Pilote le titre, le prefixe de reference (D- / PB-) et l'affichage des
+    # elements contractuels (signature, IBAN, "Bon pour accord", echeancier).
+    document_type: Mapped[str] = mapped_column(
+        String(30), default=DOC_DEVIS, server_default=DOC_DEVIS
+    )
 
     # Versioning : un meme devis peut etre revise plusieurs fois (negociation).
     # - racine_id : id du tout premier devis de la lignee (None pour la racine elle-meme).
@@ -127,6 +140,12 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     commercial: Mapped[str | None] = mapped_column(String(200))
     accroche: Mapped[str | None] = mapped_column(Text)
     note_commerciale: Mapped[str | None] = mapped_column(Text)
+
+    # Parametres specifiques au document (surtout Shopify / proposition budgetaire).
+    # Stockes en JSON pour rester souple sans multiplier les colonnes : forfait
+    # references produits, parametres de maintenance affiches, bloc frais externes,
+    # etc. Cf. generation_devis._params() pour les cles lues.
+    params_doc: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Relations
     client: Mapped["Client"] = relationship(back_populates="devis")

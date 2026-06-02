@@ -33,6 +33,16 @@ export async function serverPatch<T>(path: string, body: Record<string, unknown>
   return res.json();
 }
 
+export async function serverPut<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export async function serverDelete(path: string): Promise<void> {
   const res = await fetch(`${BACKEND}${path}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
@@ -60,6 +70,32 @@ export interface Option {
   taux_marge: number; prix_heure: number; heures_setup: number; heures_mensuel: number;
   prix_hebergement: number; commentaire: string | null; selection_regle: string;
   quantite_defaut: number; unite: string; actif: boolean; ordre: number;
+}
+
+// Option avec son statut dans une offre donnee (GET /offres/{id}/options).
+export interface OptionStatut {
+  id: number; code: string; nom: string; categorie: string; type_ligne: string;
+  vente_setup: number; vente_mensuel: number; setup_achat: number; mensuel_achat: number;
+  commentaire: string | null; statut: string; ordre: number;
+}
+
+export interface PrestationPack { titre: string; detail: string; niveau?: string; }
+export interface ContenuPack {
+  option_id: number;
+  code: string;
+  nom: string;
+  niveau: string;
+  famille: string;
+  famille_label: string;
+  socle_obligatoire: boolean;
+  personnalise: boolean;
+  herite: PrestationPack[];
+  contenu: {
+    accroche: string;
+    intro: string;
+    delai_reponse: string;
+    prestations: PrestationPack[];
+  };
 }
 
 export interface Client {

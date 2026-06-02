@@ -1,7 +1,7 @@
 """Routes CRUD pour les offres."""
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -180,3 +180,37 @@ async def get_offre_options(offre_id: int, db: AsyncSession = Depends(get_db)):
             ordre=opt.ordre,
         ))
     return result
+
+
+class InclusionsUpdate(BaseModel):
+    # Liste complete des option_id incluses d'office dans l'offre (remplacement total).
+    option_ids: list[int]
+
+
+@router.put("/{offre_id}/inclusions", response_model=list[OptionWithStatut])
+async def set_offre_inclusions(
+    offre_id: int, data: InclusionsUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Definit les options incluses d'office dans une offre (remplacement complet).
+
+    N'affecte que le catalogue (statut "Inclus" dans le simulateur) ; les devis deja
+    emis conservent leurs prix figes. On ne garde que les ids correspondant a des
+    options actives existantes (garde-fou contre les ids orphelins/inactifs)."""
+    offre = await db.get(Offre, offre_id)
+    if not offre:
+        raise HTTPException(404, "Offre non trouvee")
+
+    ids_demandes = set(data.option_ids)
+    if ids_demandes:
+        valides = set((await db.execute(
+            select(Option.id).where(Option.id.in_(ids_demandes), Option.actif)
+        )).scalars().all())
+    else:
+        valides = set()
+
+    await db.execute(delete(OptionInclusion).where(OptionInclusion.offre_id == offre_id))
+    for oid in valides:
+        db.add(OptionInclusion(offre_id=offre_id, option_id=oid))
+    await db.commit()
+
+    return await get_offre_options(offre_id, db)

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,7 @@ interface VersionInfo {
 }
 interface DevisDetail {
   id: number; reference: string; statut: string;
+  document_type: string;
   version: number; version_active: boolean; versions: VersionInfo[];
   date_emission: string; date_validite: string; date_mise_en_ligne: string | null;
   date_debut_echeancier: string | null; intervalle_echeance_jours: number;
@@ -127,9 +128,14 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             <p className="text-sm text-gray-500">{d.client_raison_sociale}</p>
           </div>
         </div>
-        <span className={`self-start px-3 py-1 rounded text-sm font-medium ${STATUT_COLORS[d.statut] || "bg-gray-100 text-gray-700"}`}>
-          {d.statut}
-        </span>
+        <div className="flex items-center gap-2 self-start">
+          <span className={`px-3 py-1 rounded text-sm font-medium ${d.document_type === "proposition_budgetaire" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-700"}`}>
+            {d.document_type === "proposition_budgetaire" ? "Proposition budgetaire" : "Devis"}
+          </span>
+          <span className={`px-3 py-1 rounded text-sm font-medium ${STATUT_COLORS[d.statut] || "bg-gray-100 text-gray-700"}`}>
+            {d.statut}
+          </span>
+        </div>
       </div>
 
       {params.erreur && (
@@ -176,6 +182,18 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             className="px-4 py-2 bg-amber-600 text-white rounded text-sm font-medium text-center">
             Modifier
           </Link>
+        )}
+        {d.statut === "brouillon" && (
+          <form action={convertirDocumentType}>
+            <input type="hidden" name="devis_id" value={d.id} />
+            <input type="hidden" name="document_type"
+              value={d.document_type === "proposition_budgetaire" ? "devis" : "proposition_budgetaire"} />
+            <button type="submit" className="w-full px-4 py-2 border border-violet-400 text-violet-700 rounded text-sm font-medium">
+              {d.document_type === "proposition_budgetaire"
+                ? "Reconvertir en devis"
+                : "Convertir en proposition budgetaire"}
+            </button>
+          </form>
         )}
         <a href={`/api/devis/${d.id}/document`}
           className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium text-center">

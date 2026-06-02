@@ -38,6 +38,8 @@ type Result = Record<string, string>;
 export interface EditionInitial {
   id: number;
   statut: string;
+  document_type?: string;
+  params_doc?: Record<string, unknown> | null;
   offre_id: number;
   client_id: number;
   mode: string;
@@ -99,6 +101,38 @@ export default function SimulateurClient({
   // Resultat
   const [result, setResult] = useState<Result | null>(null);
   const [calcul, setCalcul] = useState(false);
+
+  // --- Type de document & parametres specifiques (proposition / Shopify) ---
+  const isShopify = /shopify/i.test(offre.type_site || "");
+  const ip = (initial?.params_doc ?? {}) as Record<string, unknown>;
+  const ipFe = (ip.frais_externes ?? {}) as Record<string, unknown>;
+  const [documentType, setDocumentType] = useState(initial?.document_type ?? "devis");
+  const [maxRef, setMaxRef] = useState(ip.max_references_included != null ? String(ip.max_references_included) : "");
+  const [maintHours, setMaintHours] = useState(ip.maintenance_hours_per_month != null ? String(ip.maintenance_hours_per_month) : "");
+  const [maintDelai, setMaintDelai] = useState(ip.maintenance_response_delay != null ? String(ip.maintenance_response_delay) : "");
+  const [maintEngagement, setMaintEngagement] = useState(ip.maintenance_commitment_months != null ? String(ip.maintenance_commitment_months) : "");
+  const [feAbo, setFeAbo] = useState(!!ipFe.abonnement_shopify);
+  const [feApps, setFeApps] = useState(!!ipFe.apps_payantes);
+  const [feEmail, setFeEmail] = useState(!!ipFe.hebergement_email);
+  const [feLicences, setFeLicences] = useState(!!ipFe.licences_tierces);
+  const [feDomaine, setFeDomaine] = useState(ipFe.nom_de_domaine != null ? String(ipFe.nom_de_domaine) : "");
+
+  // params_doc reconstitue pour la sauvegarde (uniquement pour les offres Shopify ;
+  // les cles vides sont omises, cf. generation_devis._params cote backend).
+  const paramsDoc: Record<string, unknown> = {};
+  if (isShopify) {
+    if (maxRef) paramsDoc.max_references_included = Number(maxRef);
+    if (maintHours) paramsDoc.maintenance_hours_per_month = Number(maintHours);
+    if (maintDelai) paramsDoc.maintenance_response_delay = maintDelai;
+    if (maintEngagement) paramsDoc.maintenance_commitment_months = Number(maintEngagement);
+    const fe: Record<string, unknown> = {};
+    if (feAbo) fe.abonnement_shopify = true;
+    if (feApps) fe.apps_payantes = true;
+    if (feEmail) fe.hebergement_email = true;
+    if (feLicences) fe.licences_tierces = true;
+    if (feDomaine) fe.nom_de_domaine = feDomaine;
+    if (Object.keys(fe).length > 0) paramsDoc.frais_externes = fe;
+  }
 
   const edition = !!initial;
   const creerNouvelleVersion = edition && initial!.statut !== "brouillon";
@@ -539,6 +573,78 @@ export default function SimulateurClient({
                 <input type="hidden" name="options_json" value={JSON.stringify(optionsPourDevis)} />
                 <input type="hidden" name="prestations_json" value={JSON.stringify(prestationsPourDevis)} />
                 <input type="hidden" name="articles_offerts_json" value={JSON.stringify(articlesOfferts)} />
+                <input type="hidden" name="document_type" value={documentType} />
+                <input type="hidden" name="params_doc" value={JSON.stringify(paramsDoc)} />
+
+                {/* Type de document */}
+                <div className="mb-3">
+                  <label className="block text-sm font-medium mb-1">Type de document</label>
+                  <div className="flex gap-2">
+                    {[
+                      { v: "devis", l: "Devis" },
+                      { v: "proposition_budgetaire", l: "Proposition budgetaire" },
+                    ].map(t => (
+                      <button key={t.v} type="button" onClick={() => setDocumentType(t.v)}
+                        className={`flex-1 px-3 py-2 rounded text-sm font-medium border ${documentType === t.v ? "bg-[#1A355E] text-white border-[#1A355E]" : "bg-white text-gray-600 border-gray-300"}`}>
+                        {t.l}
+                      </button>
+                    ))}
+                  </div>
+                  {documentType === "proposition_budgetaire" && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      Document d&apos;estimation non contractuel : pas de signature, d&apos;IBAN ni d&apos;echeancier. Reference prefixee PB-.
+                    </p>
+                  )}
+                </div>
+
+                {/* Parametres Shopify (forfait references, maintenance, frais externes) */}
+                {isShopify && (
+                  <details className="mb-3 rounded-lg border border-gray-200 bg-gray-50 p-3" open>
+                    <summary className="cursor-pointer text-sm font-semibold text-gray-600">Parametres Shopify</summary>
+                    <div className="mt-3 space-y-3">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">Forfait references produits (max inclus)</label>
+                        <input type="number" min={0} value={maxRef} onChange={e => setMaxRef(e.target.value)}
+                          placeholder="ex. 300" className="w-full border rounded px-3 py-2 text-sm" />
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Heures/mois</label>
+                          <input type="number" min={0} value={maintHours} onChange={e => setMaintHours(e.target.value)}
+                            placeholder="ex. 2" className="w-full border rounded px-2 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Delai reponse</label>
+                          <input type="text" value={maintDelai} onChange={e => setMaintDelai(e.target.value)}
+                            placeholder="ex. 48 h" className="w-full border rounded px-2 py-2 text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">Engagement (mois)</label>
+                          <input type="number" min={0} value={maintEngagement} onChange={e => setMaintEngagement(e.target.value)}
+                            placeholder="ex. 12" className="w-full border rounded px-2 py-2 text-sm" />
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Frais externes a la charge du client</p>
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={feAbo} onChange={e => setFeAbo(e.target.checked)} className="accent-[#1A355E]" />Abonnement Shopify</label>
+                          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={feApps} onChange={e => setFeApps(e.target.checked)} className="accent-[#1A355E]" />Applications payantes</label>
+                          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={feEmail} onChange={e => setFeEmail(e.target.checked)} className="accent-[#1A355E]" />Hebergement e-mail tiers</label>
+                          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={feLicences} onChange={e => setFeLicences(e.target.checked)} className="accent-[#1A355E]" />Licences/composants tiers</label>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span>Nom de domaine :</span>
+                            <select value={feDomaine} onChange={e => setFeDomaine(e.target.value)} className="border rounded px-2 py-1 text-sm">
+                              <option value="">(aucun)</option>
+                              <option value="reprise">Reprise existant</option>
+                              <option value="creation">Creation</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                )}
+
                 <div className="mb-3">
                   <label className="block text-sm font-medium mb-1">Client</label>
                   <select name="client_id" required defaultValue={initial?.client_id ?? ""}

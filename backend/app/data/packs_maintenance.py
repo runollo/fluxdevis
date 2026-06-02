@@ -201,11 +201,42 @@ PACKS_MAINTENANCE: dict[str, dict] = {
 }
 
 
-def contenu_cumule(code: str) -> dict | None:
+def _prestations_propres(code: str, pack: dict, overrides: dict) -> list[tuple[str, str]]:
+    """Prestations PROPRES a un niveau : override base si present, sinon fichier.
+
+    L'override (Option.contenu_pack) stocke des dicts {titre, detail} ; le fichier
+    stocke des tuples (titre, detail). On normalise vers une liste de tuples.
+    """
+    ov = overrides.get(code) or {}
+    liste = ov.get("prestations")
+    if liste is not None:
+        return [
+            ((p.get("titre") or "").strip(), (p.get("detail") or "").strip())
+            for p in liste
+            if (p.get("titre") or "").strip()
+        ]
+    return list(pack["prestations"])
+
+
+def _champ_pack(code: str, pack: dict, overrides: dict, cle: str):
+    """Valeur d'un champ texte (accroche/intro/delai_reponse) : override sinon fichier."""
+    ov = overrides.get(code) or {}
+    val = ov.get(cle)
+    if val is not None and str(val).strip() != "":
+        return val
+    return pack.get(cle)
+
+
+def contenu_cumule(code: str, overrides: dict | None = None) -> dict | None:
     """Retourne le contenu CUMULE d'un pack (resout la chaine d'heritage).
 
+    `overrides` : dict {code_pack: contenu_pack} issu de la base (Option.contenu_pack),
+    permettant de surcharger, maillon par maillon, le descriptif du fichier
+    `packs_maintenance` (accroche, intro, delai_reponse, prestations propres). Absent
+    ou None => contenu du fichier (fallback).
+
     Renvoie un dict :
-      - famille, famille_label, niveau, socle_obligatoire, accroche, delai_reponse ;
+      - famille, famille_label, niveau, socle_obligatoire, accroche, intro, delai_reponse ;
       - prestations : liste cumulee (du socle au niveau choisi), avec une cle `niveau`
         sur chaque ligne pour pouvoir grouper a l'affichage si besoin ;
       - rappel : RAPPEL_SHOPIFY pour la famille Shopify, sinon None.
@@ -214,22 +245,26 @@ def contenu_cumule(code: str) -> dict | None:
     pack = PACKS_MAINTENANCE.get(code)
     if pack is None:
         return None
+    overrides = overrides or {}
 
-    # Remonter la chaine d'heritage jusqu'au socle (ordre socle -> niveau choisi).
-    chaine: list[dict] = []
+    # Remonter la chaine d'heritage jusqu'au socle (ordre socle -> niveau choisi),
+    # en conservant le code de chaque maillon pour resoudre ses overrides.
+    chaine: list[tuple[str, dict]] = []
+    code_courant: str | None = code
     courant: dict | None = pack
     while courant is not None:
-        chaine.insert(0, courant)
+        chaine.insert(0, (code_courant, courant))
         parent_code = courant.get("herite_de")
+        code_courant = parent_code
         courant = PACKS_MAINTENANCE.get(parent_code) if parent_code else None
 
     prestations: list[dict] = []
-    for niveau_pack in chaine:
-        for titre, detail in niveau_pack["prestations"]:
+    for code_m, pack_m in chaine:
+        for titre, detail in _prestations_propres(code_m, pack_m, overrides):
             prestations.append({
                 "titre": titre,
                 "detail": detail,
-                "niveau": niveau_pack["niveau"],
+                "niveau": pack_m["niveau"],
             })
 
     return {
@@ -238,8 +273,9 @@ def contenu_cumule(code: str) -> dict | None:
         "famille_label": pack["famille_label"],
         "niveau": pack["niveau"],
         "socle_obligatoire": pack["socle_obligatoire"],
-        "accroche": pack["accroche"],
-        "delai_reponse": pack["delai_reponse"],
+        "accroche": _champ_pack(code, pack, overrides, "accroche"),
+        "intro": _champ_pack(code, pack, overrides, "intro"),
+        "delai_reponse": _champ_pack(code, pack, overrides, "delai_reponse"),
         "prestations": prestations,
         "rappel": RAPPEL_SHOPIFY if pack["famille"] == "Shopify" else None,
     }

@@ -14,7 +14,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from fractions import Fraction
 from io import BytesIO
 
+from sqlalchemy import select
+
 from app.data.packs_maintenance import contenu_cumule
+from app.models.option import Option
 from app.services.echeances import repartir_au_centime
 from app.services.facturation_maintenance import (
     montant_recurrent_brut_ht, montant_recurrent_ht,
@@ -35,7 +38,8 @@ D = Decimal
 TVA_RATE = D("0.20")
 HEX_AVANTAGE = "EEF7F1"   # vert tres clair (encadre avantages)
 
-# Socle commun a toutes les offres (elements de reassurance).
+# Socle commun a toutes les offres (elements de reassurance). Cas Webflow :
+# l'hebergement est porte par FluXweb et inclus dans l'abonnement.
 SOCLE_COMMUN = [
     ("Hébergement", "Inclus pendant toute la durée de l'abonnement"),
     ("Nom de domaine", "Reprise de l'existant ou création (.com / .fr selon disponibilité) "
@@ -44,6 +48,23 @@ SOCLE_COMMUN = [
     ("Design responsive", "Adapté mobile / tablette / desktop"),
     ("Formulaire de contact", "Avec protection anti-spam"),
 ]
+
+# Socle Shopify : l'hebergement/infra/SSL sont assures par la plateforme Shopify
+# (abonnement a la charge du client, cf. encart dedie), pas par FluXweb. Le bloc
+# generique "INCLUS DANS TOUTES NOS OFFRES" est donc remplace par ce socle.
+SOCLE_SHOPIFY = [
+    ("Infrastructure & hébergement",
+     "Assurés par la plateforme Shopify via l'abonnement souscrit par le Client"),
+    ("Nom de domaine", "Reprise de l'existant et paramétrage du domaine sur Shopify"),
+    ("Certificat SSL", "Sécurisation HTTPS gérée par Shopify après raccordement du domaine"),
+    ("Design responsive", "Adapté mobile / tablette / desktop"),
+    ("Formulaire de contact", "Mise en place du formulaire avec protection anti-spam "
+                              "selon les possibilités du thème et de la configuration retenue"),
+]
+
+# Mots-cles permettant de masquer les lignes de theme/template Shopify du document
+# (parametre interne de production : ni nom, ni prix, ni mention visible).
+_MOTS_THEME = ("theme", "thème", "template", "gabarit")
 
 
 def _q(val) -> Decimal:
@@ -143,8 +164,25 @@ def _calcul_synthese(devis) -> dict:
 # Document
 # ---------------------------------------------------------------------------
 
-def generer_devis(devis, societe) -> BytesIO:
-    """Genere un devis Word oriente client et retourne un buffer BytesIO."""
+async def charger_overrides_packs(db) -> dict:
+    """Charge depuis la base les overrides de contenu des packs de maintenance.
+
+    Renvoie {code: contenu_pack} pour les options de type PACK dont `contenu_pack`
+    est renseigne. A passer a `generer_devis(..., overrides_packs=...)`.
+    """
+    rows = (await db.execute(
+        select(Option.code, Option.contenu_pack).where(Option.type_ligne == "PACK")
+    )).all()
+    return {code: cp for code, cp in rows if cp}
+
+
+def generer_devis(devis, societe, overrides_packs: dict | None = None) -> BytesIO:
+    """Genere un devis Word oriente client et retourne un buffer BytesIO.
+
+    overrides_packs : dict {code_pack: contenu_pack} issu de la base, pour surcharger
+    le descriptif des packs de maintenance (cf. packs_maintenance.contenu_cumule).
+    """
+    overrides_packs = overrides_packs or {}
     doc = Document()
     setup_page(doc)
     force_arial(doc)
@@ -164,6 +202,10 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_creation(doc, devis, s)
     spacer(doc, 8)
 
+    # Forfait references produits Shopify (si parametre).
+    if _add_references_shopify(doc, devis):
+        spacer(doc, 8)
+
     _add_socle(doc, devis)
     spacer(doc, 8)
 
@@ -175,9 +217,14 @@ def generer_devis(devis, societe) -> BytesIO:
         _add_abonnement(doc, devis, s)
         spacer(doc, 8)
 
-    # Detail du contenu du pack de maintenance choisi (independant du montant).
-    if _add_detail_maintenance(doc, devis):
-        spacer(doc, 8)
+    # Descriptif de la maintenance : version courte pour Shopify, detail (annexe) pour
+    # Webflow. Pour Shopify, le bloc n'apparait que s'il y a un mensuel (maintenance).
+    if _is_shopify(devis):
+        if s["mensuel_net"] > 0 and _add_maintenance_shopify(doc, devis, overrides_packs):
+            spacer(doc, 8)
+    else:
+        if _add_detail_maintenance(doc, devis, overrides_packs):
+            spacer(doc, 8)
 
     # Encart Shopify : abonnement plateforme a la charge du client (indep. du mensuel).
     if _is_shopify(devis):
@@ -187,11 +234,18 @@ def generer_devis(devis, societe) -> BytesIO:
     _add_recap_financier(doc, devis, s)
     spacer(doc, 8)
 
-    if _mode_label(devis) == "Leasing":
-        _add_leasing(doc, devis)
-    else:
-        _add_echeancier(doc, devis)
-    spacer(doc, 6)
+    # Frais externes a la charge du client (optionnel) : presente APRES les totaux pour
+    # bien marquer qu'ils n'y sont pas inclus. Aucun montant, jamais dans le total.
+    if _add_frais_externes(doc, devis):
+        spacer(doc, 8)
+
+    # Echeancier / financement : elements contractuels, masques en proposition budgetaire.
+    if not _is_pb(devis):
+        if _mode_label(devis) == "Leasing":
+            _add_leasing(doc, devis)
+        else:
+            _add_echeancier(doc, devis)
+        spacer(doc, 6)
 
     if devis.note_commerciale:
         _add_note(doc, devis.note_commerciale)
@@ -208,7 +262,12 @@ def generer_devis(devis, societe) -> BytesIO:
 def _add_header(doc, devis, societe):
     marque = (societe.marque if societe and societe.marque else None) or \
              (societe.nom if societe else "FluXweb")
-    add_logo_header(doc, "DEVIS", marque_fallback=marque)
+    if _is_pb(devis):
+        # Titre plus long : taille reduite pour tenir sur l'en-tete.
+        add_logo_header(doc, "PROPOSITION BUDGÉTAIRE", marque_fallback=marque,
+                        titre_size=15)
+    else:
+        add_logo_header(doc, "DEVIS", marque_fallback=marque)
 
 
 def _add_emetteur_meta(doc, devis, societe):
@@ -222,12 +281,15 @@ def _add_emetteur_meta(doc, devis, societe):
             (f"SIRET : {societe.siret}" if societe.siret else "", False),
             (f"TVA : {societe.tva_intracom}" if societe.tva_intracom else "", False),
         ]
+    label_num = "Proposition n°" if _is_pb(devis) else "Devis n°"
     meta = [
-        ("Devis n°", devis.reference),
+        (label_num, devis.reference),
         ("Date d’émission", devis.date_emission.strftime("%d/%m/%Y")),
         ("Valable jusqu’au", devis.date_validite.strftime("%d/%m/%Y")),
-        ("Mode de règlement", _mode_label(devis)),
     ]
+    # Le mode de reglement n'a de sens que pour un devis (engagement contractuel).
+    if not _is_pb(devis):
+        meta.append(("Mode de règlement", _mode_label(devis)))
     if devis.commercial:
         meta.append(("Commercial", devis.commercial))
     add_emetteur_meta(doc, emetteur_lines, meta)
@@ -270,21 +332,40 @@ def _is_shopify(devis) -> bool:
     return bool(getattr(devis, "est_shopify", False))
 
 
-def _add_socle(doc, devis):
-    """Socle commun a toutes les offres (reassurance : ce qui est toujours inclus).
+def _is_pb(devis) -> bool:
+    """Vrai si le document est une proposition budgetaire (vs un devis contractuel)."""
+    return (getattr(devis, "document_type", None) or "devis") == "proposition_budgetaire"
 
-    Pour Shopify, l'hebergement est assure par la plateforme (abonnement a la charge
-    du client, cf. encart dedie) et non porte par FluXweb : la ligne est adaptee.
+
+def _params(devis) -> dict:
+    """Parametres specifiques au document (JSON), avec repli sur dict vide."""
+    return getattr(devis, "params_doc", None) or {}
+
+
+def _est_ligne_theme(nom: str) -> bool:
+    """Vrai si une ligne correspond a un theme/template Shopify (a masquer)."""
+    n = (nom or "").lower()
+    return any(mot in n for mot in _MOTS_THEME)
+
+
+def _add_socle(doc, devis):
+    """Socle de reassurance : ce qui est toujours pris en charge.
+
+    Webflow : "INCLUS DANS TOUTES NOS OFFRES" (hebergement porte par FluXweb).
+    Shopify : "ÉLÉMENTS TECHNIQUES PRIS EN CHARGE DANS L'OFFRE SHOPIFY" (hebergement
+    et infra assures par la plateforme Shopify via l'abonnement du client).
     """
-    socle = list(SOCLE_COMMUN)
     if _is_shopify(devis):
-        socle[0] = ("Hébergement & infrastructure",
-                    "Assurés par la plateforme Shopify (voir encart dédié ci-dessous)")
+        socle = SOCLE_SHOPIFY
+        titre_socle = "ÉLÉMENTS TECHNIQUES PRIS EN CHARGE DANS L’OFFRE SHOPIFY"
+    else:
+        socle = SOCLE_COMMUN
+        titre_socle = "INCLUS DANS TOUTES NOS OFFRES"
 
     tbl_head = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl_head)
     cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
-    cell_text(tbl_head.rows[0].cells[0], "INCLUS DANS TOUTES NOS OFFRES",
+    cell_text(tbl_head.rows[0].cells[0], titre_socle,
               bold=True, size=10, color=C_WHITE)
 
     tbl = doc.add_table(rows=len(socle), cols=2)
@@ -328,11 +409,16 @@ def _add_creation(doc, devis, s):
     p_fmt(p, before=2, after=1)
     run(p, "Votre projet comprend :", bold=True, size=8, color=C_TEXT)
 
+    # Pour Shopify, le theme/template est un parametre interne de production : on
+    # masque toute ligne correspondante (ni nom, ni prix, ni mention). Le cout reste
+    # dans le total global de creation, sans ligne visible.
+    masquer_theme = _is_shopify(devis)
+
     # Construire la liste (sans prix) : prestations + options setup (payantes + incluses)
     puces = []
     for lg in sorted(devis.lignes or [], key=lambda x: x.ordre):
         nom = (lg.designation or "").strip()
-        if nom:
+        if nom and not (masquer_theme and _est_ligne_theme(nom)):
             qte = lg.quantite or 1
             libelle = nom if qte <= 1 else f"{nom} (x{qte})"
             puces.append((libelle, "offert" if nom in offerts_noms else "normal"))
@@ -343,6 +429,8 @@ def _add_creation(doc, devis, s):
         nom = (opt.nom or "").strip()
         if not nom:
             continue
+        if masquer_theme and _est_ligne_theme(nom):
+            continue  # theme/template Shopify masque
         qte = opt.quantite or 1
         libelle = nom if qte <= 1 else f"{nom} (x{qte})"
         if nom in offerts_noms:
@@ -499,13 +587,10 @@ def _add_abonnement_shopify(doc, societe):
     Il n'est ni porte ni facture par FluXweb (decision metier validee par Bruno).
     Aucun montant n'est inscrit (tarifs Shopify variables et hors maitrise FluXweb).
     """
-    marque = (societe.marque if societe and societe.marque else None) or \
-             (societe.nom if societe else "FluXweb")
-
     tbl_head = doc.add_table(rows=1, cols=1)
     tbl_no_spacing(tbl_head)
     cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
-    cell_text(tbl_head.rows[0].cells[0], "ABONNEMENT SHOPIFY (à votre charge)",
+    cell_text(tbl_head.rows[0].cells[0], "ABONNEMENT SHOPIFY",
               bold=True, size=10, color=C_WHITE)
 
     tbl = doc.add_table(rows=1, cols=1)
@@ -516,34 +601,189 @@ def _add_abonnement_shopify(doc, societe):
 
     p = cell.paragraphs[0]
     p_fmt(p, before=2, after=2)
-    run(p, "Votre boutique fonctionne sur la plateforme Shopify, qui assure "
-           "l'hébergement, l'infrastructure technique, la sécurité et le moteur de "
-           "paiement. Cet abonnement est ", size=8, color=C_TEXT)
-    run(p, "souscrit et réglé directement par vos soins, en votre nom, auprès de "
-           "Shopify", bold=True, size=8, color=C_TEXT)
-    run(p, ". Il vous garantit la pleine propriété et la maîtrise de votre boutique, "
-           "de vos données et de vos moyens de paiement.", size=8, color=C_TEXT)
+    run(p, "La boutique fonctionne sur la plateforme Shopify, qui assure "
+           "l'infrastructure technique, l'hébergement, la sécurité, les mises à jour "
+           "de la plateforme et le moteur e-commerce.", size=8, color=C_TEXT)
 
     p = cell.add_paragraph()
     p_fmt(p, before=2, after=2)
-    run(p, "Il est indépendant de la présente proposition et ", size=8, color=C_TEXT)
-    run(p, f"n'est ni inclus ni facturé par {marque}", bold=True, size=8, color=C_TEXT)
-    run(p, ". Nous vous accompagnons dans le choix du plan le plus adapté à votre "
-           "activité.", size=8, color=C_TEXT)
+    run(p, "L'abonnement Shopify est ", size=8, color=C_TEXT)
+    run(p, "souscrit et réglé directement par le Client, en son nom, auprès de Shopify",
+        bold=True, size=8, color=C_TEXT)
+    run(p, ". Il n'est pas inclus dans la présente proposition.", size=8, color=C_TEXT)
 
 
-def _add_detail_maintenance(doc, devis) -> bool:
+def _add_references_shopify(doc, devis) -> bool:
+    """Phrase sur le forfait references produits Shopify (si parametree).
+
+    Affichee uniquement pour une offre Shopify dont `max_references_included` est
+    renseigne dans params_doc. Renvoie True si la phrase a ete ecrite.
+    """
+    if not _is_shopify(devis):
+        return False
+    maxref = _params(devis).get("max_references_included")
+    if not maxref:
+        return False
+
+    p = doc.add_paragraph()
+    p_fmt(p, before=0, after=0)
+    run(p, "Forfait references produits : ", bold=True, size=8, color=C_NAVY)
+    run(p,
+        f"le forfait comprend l'import et la structuration de jusqu'à {maxref} "
+        "références produits fournies par le Client, sous réserve de réception d'un "
+        "export catalogue exploitable. Le nombre définitif de références sera confirmé "
+        "après analyse des éléments transmis. Toute référence supplémentaire pourra "
+        "faire l'objet d'un chiffrage complémentaire.",
+        italic=True, size=8, color=C_TEXT)
+    return True
+
+
+def _add_frais_externes(doc, devis) -> bool:
+    """Bloc optionnel "FRAIS EXTERNES A LA CHARGE DU CLIENT".
+
+    N'affiche que les elements explicitement actives dans params_doc["frais_externes"].
+    AUCUN montant : ces couts sont regles directement par le client et ne sont JAMAIS
+    ajoutes au total HT/TTC de la proposition ou du devis. Renvoie True si ecrit.
+    """
+    fe = _params(devis).get("frais_externes") or {}
+    items: list[tuple[str, str]] = []
+    if fe.get("abonnement_shopify"):
+        items.append(("Abonnement Shopify",
+                      "Souscrit et réglé directement par le Client auprès de Shopify."))
+    if fe.get("apps_payantes"):
+        items.append(("Applications Shopify payantes",
+                      "Selon les fonctionnalités retenues ; réglées directement par le Client."))
+    if fe.get("hebergement_email"):
+        items.append(("Hébergement e-mail tiers",
+                      "Le cas échéant, souscrit et réglé directement par le Client."))
+    dom = fe.get("nom_de_domaine")
+    if dom:
+        detail_dom = {
+            "reprise": "Reprise du domaine existant ; renouvellement à la charge du Client.",
+            "creation": "Création d'un nouveau domaine ; achat et renouvellement à la charge du Client.",
+        }.get(dom, "Selon reprise ou création ; à la charge du Client.")
+        items.append(("Nom de domaine", detail_dom))
+    if fe.get("licences_tierces"):
+        items.append(("Licences ou composants tiers",
+                      "Licences, applications ou composants Shopify tiers nécessaires à la "
+                      "mise en ligne : à valider selon la configuration finale."))
+    if not items:
+        return False
+
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], "FRAIS EXTERNES À LA CHARGE DU CLIENT",
+              bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=len(items) + 1, cols=2)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    # Ligne d'intro (fusionnee visuellement via la 1re cellule large)
+    intro = tbl.rows[0].cells[0]
+    cell_w(intro, 18)
+    intro.merge(tbl.rows[0].cells[1])
+    cell_text(intro,
+              "Coûts réglés directement par le Client, indépendants de la présente "
+              "proposition et non compris dans les totaux ci-dessus.",
+              italic=True, size=7, color=C_AHEAD)
+    for i, (label, detail) in enumerate(items, start=1):
+        cell_w(tbl.rows[i].cells[0], 6)
+        cell_w(tbl.rows[i].cells[1], 12)
+        cell_text(tbl.rows[i].cells[0], label, bold=True, size=8, color=C_NAVY)
+        cell_text(tbl.rows[i].cells[1], detail, size=8, color=C_TEXT)
+    return True
+
+
+def _add_maintenance_shopify(doc, devis, overrides_packs: dict | None = None) -> bool:
+    """Version COURTE du bloc maintenance pour Shopify (proposition / devis simple).
+
+    Remplace la longue liste detaillee (reservee a Webflow / a l'annexe) par un
+    paragraphe synthetique. Les parametres maintenance (heures/mois, delai, engagement)
+    sont affiches s'ils sont renseignes dans params_doc. Renvoie True si ecrit.
+    """
+    overrides_packs = overrides_packs or {}
+    # Niveau du pack (si present) pour titrer "PRO" / "PREMIUM".
+    niveau = None
+    for opt in sorted(devis.options or [], key=lambda x: x.ordre):
+        if (opt.type_ligne or "").upper() == "PACK":
+            c = contenu_cumule((opt.code or "").strip(), overrides_packs)
+            if c:
+                niveau = c["niveau"]
+            break
+
+    titre = "MAINTENANCE & EXPLOITATION"
+    if niveau:
+        titre += f" {niveau.upper()}"
+
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0], titre, bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    cell = tbl.rows[0].cells[0]
+    cell_w(cell, 18)
+
+    lignes = [
+        "La maintenance assure le suivi régulier de la boutique Shopify après sa mise en ligne.",
+        "Elle comprend les contrôles essentiels du bon fonctionnement du site, du parcours "
+        "d'achat, des formulaires et des notifications.",
+        "Elle inclut les corrections mineures, l'assistance par email et les ajustements "
+        "ponctuels convenus avec le Client.",
+        "Un suivi mensuel permet d'identifier les points d'amélioration liés à l'ergonomie, "
+        "au catalogue, à la performance et à la visibilité.",
+        "Le détail des prestations incluses, limites d'intervention, délais de réponse et "
+        "exclusions est précisé dans l'annexe du contrat/devis.",
+    ]
+    for i, texte in enumerate(lignes):
+        p = cell.paragraphs[0] if i == 0 else cell.add_paragraph()
+        p_fmt(p, before=2 if i == 0 else 1, after=1)
+        run(p, texte, size=8, color=C_TEXT)
+
+    params = _params(devis)
+    heures = params.get("maintenance_hours_per_month")
+    if heures:
+        p = cell.add_paragraph()
+        p_fmt(p, before=2, after=1)
+        run(p,
+            f"La maintenance comprend jusqu'à {heures} heure(s) d'intervention par mois. "
+            "Les demandes dépassant ce volume ou impliquant une évolution fonctionnelle "
+            "significative feront l'objet d'un devis complémentaire.",
+            italic=True, size=8, color=C_NAVY)
+
+    # Delai et engagement (affiches uniquement si renseignes).
+    extras = []
+    delai = params.get("maintenance_response_delay")
+    if delai:
+        extras.append(("Délai de réponse", str(delai)))
+    engagement = params.get("maintenance_commitment_months")
+    if engagement:
+        extras.append(("Engagement initial", f"{engagement} mois"))
+    for label, val in extras:
+        p = cell.add_paragraph()
+        p_fmt(p, before=1, after=0)
+        run(p, f"{label} : ", bold=True, size=8, color=C_NAVY)
+        run(p, val, size=8, color=C_TEXT)
+    return True
+
+
+def _add_detail_maintenance(doc, devis, overrides_packs: dict | None = None) -> bool:
     """Detail du/des pack(s) de maintenance choisi(s) (cf. annexe contenu).
 
     Repond a la question client "qu'est-ce qui est inclus dans la maintenance X ?".
     Liste les prestations CUMULEES (titre + descriptif) et le delai de reponse, a partir
-    de `app.data.packs_maintenance`. Renvoie True si au moins un bloc a ete ecrit.
+    de `app.data.packs_maintenance` (surchargee le cas echeant par overrides_packs).
+    Renvoie True si au moins un bloc a ete ecrit.
     """
+    overrides_packs = overrides_packs or {}
     packs = []
     for opt in sorted(devis.options or [], key=lambda x: x.ordre):
         if (opt.type_ligne or "").upper() != "PACK":
             continue
-        c = contenu_cumule((opt.code or "").strip())
+        c = contenu_cumule((opt.code or "").strip(), overrides_packs)
         if c:
             packs.append(c)
     if not packs:
@@ -572,6 +812,12 @@ def _add_detail_maintenance(doc, devis) -> bool:
         run(p, c["accroche"], italic=True, size=8, color=C_NAVY)
         if c["socle_obligatoire"]:
             run(p, "  (socle inclus)", size=7, color=C_AHEAD, italic=True)
+
+        # Intro (presentation du niveau), affichee si renseignee
+        if c.get("intro"):
+            p = cell.add_paragraph()
+            p_fmt(p, before=0, after=1)
+            run(p, c["intro"], size=8, color=C_TEXT)
 
         # Prestations cumulees : intitule en gras + descriptif
         for presta in c["prestations"]:
@@ -631,7 +877,9 @@ def _add_recap_financier(doc, devis, s):
 
     # --- Bloc creation (one-shot) ---
     # total_ht est NET de remise ; le brut catalogue = net + remise.
-    _recap_sous_titre(doc, "Création et mise en place (à régler à la commande)")
+    pb = _is_pb(devis)
+    _recap_sous_titre(doc, "Création et mise en place" if pb
+                      else "Création et mise en place (à régler à la commande)")
     net_ht = _q(devis.total_ht)
     if s["remise_setup"] > 0:
         brut_ht = net_ht + s["remise_setup"]
@@ -646,7 +894,8 @@ def _add_recap_financier(doc, devis, s):
     else:
         lignes = [("Création et mise en place HT", fmt_eur(net_ht), False)]
     lignes.append(("TVA 20 %", fmt_eur(_q(devis.total_tva)), False))
-    lignes.append(("TOTAL TTC À LA COMMANDE", fmt_eur(_q(devis.total_ttc)), True))
+    lignes.append(("TOTAL TTC" if pb else "TOTAL TTC À LA COMMANDE",
+                   fmt_eur(_q(devis.total_ttc)), True))
     _recap_table(doc, lignes, suffix_total=" TTC")
 
     # --- Bloc abonnement mensuel ---
@@ -729,6 +978,24 @@ def _add_note(doc, note):
 
 def _add_mentions(doc, devis, societe):
     hline(doc)
+    pb = _is_pb(devis)
+
+    # Proposition budgetaire : document d'estimation non contractuel. On retire les
+    # mentions contractuelles (acceptation, IBAN, signature) et on signale clairement
+    # le caractere indicatif. La validite reste affichee.
+    if pb:
+        mentions = [
+            f"Proposition valable jusqu’au {devis.date_validite.strftime('%d/%m/%Y')}.",
+            "Document d’estimation budgétaire non contractuel, fourni à titre indicatif. "
+            "Un devis détaillé sera établi avant tout engagement.",
+            "Prix exprimés en euros. TVA au taux en vigueur (20 %).",
+        ]
+        for m in mentions:
+            p = doc.add_paragraph()
+            p_fmt(p, before=0, after=1)
+            run(p, m, italic=True, size=7, color=C_AHEAD)
+        return
+
     mentions = [
         f"Devis valable jusqu’au {devis.date_validite.strftime('%d/%m/%Y')}.",
         "Pour acceptation, retourner ce devis daté et signé avec la mention "

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { serverPost, serverPatch, serverFetch, serverDelete } from "./api";
+import { serverPost, serverPatch, serverPut, serverFetch, serverDelete } from "./api";
 
 export async function saveOffre(formData: FormData) {
   const id = formData.get("id") as string;
@@ -49,6 +49,49 @@ export async function saveOption(formData: FormData) {
     await serverPost("/options/", data);
   }
   redirect("/catalogue?tab=options");
+}
+
+export async function saveInclusions(formData: FormData) {
+  const id = formData.get("id") as string;
+  if (!id) redirect("/catalogue");
+  const raw = formData.get("option_ids_json") as string;
+  let optionIds: number[] = [];
+  try {
+    optionIds = raw ? JSON.parse(raw) : [];
+  } catch {
+    optionIds = [];
+  }
+  await serverPut(`/offres/${id}/inclusions`, { option_ids: optionIds });
+  redirect(`/catalogue/offre?id=${id}&incl_maj=1`);
+}
+
+export async function saveContenuPack(formData: FormData) {
+  const id = formData.get("id") as string;
+  if (!id) redirect("/catalogue?tab=options");
+  const prestationsRaw = formData.get("prestations_json") as string;
+  let prestations: Array<{ titre: string; detail: string }> = [];
+  try {
+    prestations = prestationsRaw ? JSON.parse(prestationsRaw) : [];
+  } catch {
+    prestations = [];
+  }
+  const data: Record<string, unknown> = {
+    accroche: (formData.get("accroche") as string) || "",
+    intro: (formData.get("intro") as string) || "",
+    delai_reponse: (formData.get("delai_reponse") as string) || "",
+    prestations: prestations
+      .filter((p) => (p.titre || "").trim())
+      .map((p) => ({ titre: p.titre, detail: p.detail || "" })),
+  };
+  await serverPatch(`/options/${id}/contenu-pack`, data);
+  redirect(`/catalogue/option?id=${id}&pack_maj=1`);
+}
+
+export async function resetContenuPack(formData: FormData) {
+  const id = formData.get("id") as string;
+  if (!id) redirect("/catalogue?tab=options");
+  await serverDelete(`/options/${id}/contenu-pack`);
+  redirect(`/catalogue/option?id=${id}&pack_reset=1`);
 }
 
 export async function saveClient(formData: FormData) {
@@ -274,9 +317,24 @@ export async function saveDevis(formData: FormData) {
     redirect("/simulateur");
   }
 
+  // Type de document (devis / proposition_budgetaire) et parametres specifiques
+  // (forfait references, frais externes, maintenance Shopify) serialises en JSON.
+  let paramsDoc: Record<string, unknown> | null = null;
+  const paramsRaw = formData.get("params_doc") as string;
+  if (paramsRaw) {
+    try {
+      const parsed = JSON.parse(paramsRaw);
+      paramsDoc = parsed && Object.keys(parsed).length > 0 ? parsed : null;
+    } catch {
+      paramsDoc = null;
+    }
+  }
+
   const data = {
     client_id: Number(client_id),
     offre_id: Number(offre_id),
+    document_type: (formData.get("document_type") as string) || "devis",
+    params_doc: paramsDoc,
     mode_reglement: formData.get("mode") || "Comptant",
     plan_paiement: formData.get("plan") || "100%",
     prix_vente_final: result.prix_vente_final,
@@ -353,6 +411,19 @@ export async function changerStatut(formData: FormData) {
   const statut = formData.get("statut") as string;
   if (!id || !statut) redirect("/devis");
   await serverPatch(`/devis/${id}/statut`, { statut });
+  redirect(`/devis/detail?id=${id}`);
+}
+
+
+export async function convertirDocumentType(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  const documentType = formData.get("document_type") as string;
+  if (!id || !documentType) redirect("/devis");
+  try {
+    await serverPatch(`/devis/${id}/document-type`, { document_type: documentType });
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
+  }
   redirect(`/devis/detail?id=${id}`);
 }
 

@@ -10,14 +10,19 @@ from decimal import Decimal
 from datetime import date, timedelta, datetime, timezone
 
 from app.core.database import get_db
-from app.models.devis import Devis, DevisLigne, DevisOptionLigne, DevisArticleOffert, StatutDevis, ModeReglement, PlanPaiement
+from app.models.devis import (
+    Devis, DevisLigne, DevisOptionLigne, DevisArticleOffert, StatutDevis,
+    ModeReglement, PlanPaiement, DOC_DEVIS, DOC_PROPOSITION,
+)
 from app.models.client import Client
 from app.models.offre import Offre
 from app.models.societe import Societe
 from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, StatutFacture
 from app.services.reference import generer_reference_facture
-from app.services.reference import generer_reference_devis
-from app.services.generation_devis import generer_devis, repartition_echeances
+from app.services.reference import generer_reference_devis, remplacer_prefixe_reference
+from app.services.generation_devis import (
+    generer_devis, repartition_echeances, charger_overrides_packs,
+)
 from app.services.echeances import dates_echeancier
 from app.services.export_excel import export_devis_xlsx
 from app.services.facturation_maintenance import (
@@ -43,6 +48,16 @@ _PLAN_MAP = {
     "50/25/25": PlanPaiement.CINQUANTE_VINGTCINQ_VINGTCINQ,
     "25/25/25/25": PlanPaiement.VINGTCINQ_X4,
 }
+
+
+def _document_type_valide(valeur: str | None) -> str:
+    """Normalise le type de document ; toute valeur inconnue retombe sur 'devis'."""
+    return DOC_PROPOSITION if valeur == DOC_PROPOSITION else DOC_DEVIS
+
+
+def _prefixe_reference(document_type: str) -> str:
+    """Prefixe de reference selon le type de document : PB- ou D-."""
+    return "PB" if document_type == DOC_PROPOSITION else "D"
 
 
 class DevisSummary(BaseModel):
@@ -103,6 +118,11 @@ class DevisCreateRequest(BaseModel):
     articles_offerts: list[dict] = []
     # Textes
     commercial: str | None = None
+    # Type de document : "devis" (defaut) ou "proposition_budgetaire"
+    document_type: str = DOC_DEVIS
+    # Parametres specifiques au document (Shopify / proposition). Cf.
+    # generation_devis._params() pour les cles supportees. Stocke tel quel en JSON.
+    params_doc: dict | None = None
 
 
 @router.get("/", response_model=list[DevisSummary])
@@ -229,6 +249,8 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     return {
         "id": d.id,
         "reference": d.reference,
+        "document_type": d.document_type,
+        "params_doc": d.params_doc,
         "statut": d.statut.value,
         "version": d.version,
         "version_active": d.version_active,
@@ -351,6 +373,8 @@ async def edition_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     return {
         "id": d.id,
         "statut": d.statut.value,
+        "document_type": d.document_type,
+        "params_doc": d.params_doc,
         "offre_id": d.offre_id,
         "client_id": d.client_id,
         "mode": d.mode_reglement.value,
@@ -488,6 +512,51 @@ def _appliquer_champs(devis: Devis, data: "DevisCreateRequest", client, offre, m
     devis.total_tva = data.total_tva
     devis.total_ttc = data.total_ttc
     devis.commercial = data.commercial
+    devis.document_type = _document_type_valide(data.document_type)
+    devis.params_doc = data.params_doc or None
+    # La reference doit toujours refleter le type de document (prefixe D- / PB-).
+    # On resynchronise le prefixe sans toucher au code client ni a l'horodatage.
+    if devis.reference:
+        devis.reference = remplacer_prefixe_reference(
+            devis.reference, _prefixe_reference(devis.document_type)
+        )
+
+
+class DocumentTypeUpdate(BaseModel):
+    document_type: str
+
+
+@router.patch("/{devis_id}/document-type", response_model=DevisSummary)
+async def changer_document_type_devis(
+    devis_id: int, data: DocumentTypeUpdate, db: AsyncSession = Depends(get_db)
+):
+    """Bascule rapide d'un BROUILLON entre devis et proposition budgetaire.
+
+    Conversion express sans repasser par le simulateur : change le type de
+    document et resynchronise le prefixe de reference (D- <-> PB-). Reservee aux
+    brouillons : une fois transmis, il faut reviser le devis (nouvelle version)
+    pour en changer la nature contractuelle.
+    """
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    if devis.archived_at is not None:
+        raise HTTPException(400, "Devis archive : restaurez-le avant de le modifier.")
+    if devis.statut != StatutDevis.BROUILLON:
+        raise HTTPException(
+            400,
+            "Seul un brouillon peut etre converti directement. Revisez le devis "
+            "pour changer son type.",
+        )
+
+    nouveau_type = _document_type_valide(data.document_type)
+    devis.document_type = nouveau_type
+    devis.reference = remplacer_prefixe_reference(
+        devis.reference, _prefixe_reference(nouveau_type)
+    )
+    await db.commit()
+    await db.refresh(devis)
+    return devis
 
 
 @router.patch("/{devis_id}/statut", response_model=DevisSummary)
@@ -832,8 +901,10 @@ async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
 
     societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
 
-    buf = generer_devis(devis, societe)
-    filename = f"Devis_{devis.reference}.docx"
+    overrides_packs = await charger_overrides_packs(db)
+    buf = generer_devis(devis, societe, overrides_packs=overrides_packs)
+    prefixe_nom = "Proposition" if devis.document_type == DOC_PROPOSITION else "Devis"
+    filename = f"{prefixe_nom}_{devis.reference}.docx"
     return StreamingResponse(
         buf,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -957,13 +1028,18 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
     if not offre:
         raise HTTPException(404, "Offre non trouvee")
 
-    reference = generer_reference_devis(client.raison_sociale)
+    document_type = _document_type_valide(data.document_type)
+    reference = generer_reference_devis(
+        client.raison_sociale, prefixe=_prefixe_reference(document_type)
+    )
 
     mode = ModeReglement.LEASING if data.mode_reglement == "Leasing" else ModeReglement.COMPTANT
     plan = _PLAN_MAP.get(data.plan_paiement)
 
     devis = Devis(
         reference=reference,
+        document_type=document_type,
+        params_doc=data.params_doc or None,
         statut=StatutDevis.BROUILLON,
         date_emission=date.today(),
         date_validite=date.today() + timedelta(days=30),

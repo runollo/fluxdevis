@@ -65,13 +65,33 @@ def _extract_code(raison_sociale: str) -> str:
     return code.ljust(4, "X")[:4]
 
 
-def generer_reference_devis(raison_sociale: str, dt: datetime | None = None) -> str:
-    """Genere une reference de devis : D-XXXX-AAMMJJHHMM."""
+def generer_reference_devis(
+    raison_sociale: str, dt: datetime | None = None, prefixe: str = "D"
+) -> str:
+    """Genere une reference de devis : <PREFIXE>-XXXX-AAMMJJHHMM.
+
+    prefixe : "D" pour un devis, "PB" pour une proposition budgetaire.
+    """
     if dt is None:
         dt = datetime.now()
     code = _extract_code(raison_sociale)
     ts = dt.strftime("%y%m%d%H%M")
-    return f"D-{code}-{ts}"
+    return f"{prefixe}-{code}-{ts}"
+
+
+def remplacer_prefixe_reference(reference: str, prefixe: str) -> str:
+    """Remplace le prefixe d'une reference existante sans toucher au reste.
+
+    Conserve le code client, le timestamp et l'eventuel suffixe de version
+    (ex: -V2) : "D-LOVI-2605312138" -> "PB-LOVI-2605312138". Utilise lors du
+    basculement devis <-> proposition budgetaire sur un brouillon, pour que le
+    prefixe (D- / PB-) reste coherent avec le type de document sans regenerer
+    l'horodatage d'origine.
+    """
+    if not reference or "-" not in reference:
+        return reference
+    _, reste = reference.split("-", 1)
+    return f"{prefixe}-{reste}"
 
 
 def generer_reference_facture(

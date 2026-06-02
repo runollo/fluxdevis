@@ -475,7 +475,12 @@ export default function SimulateurClient({
 
         {/* Colonne resultats */}
         <div className="lg:col-span-2">
-          <div className="bg-white border rounded-lg p-4 sm:p-5 lg:sticky lg:top-4">
+          {/* Panneau colle a la hauteur de l'ecran avec defilement INTERNE : le recap
+              reste visible et le bloc Enregistrer est toujours atteignable, meme quand
+              le contenu depasse la fenetre (un sticky plus haut que l'ecran masquerait
+              sinon le bas). */}
+          <div className="space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+          <div className="bg-white border rounded-lg p-4 sm:p-5">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Resultats</h2>
               {calcul && <span className="text-xs text-gray-400">calcul...</span>}
@@ -551,7 +556,7 @@ export default function SimulateurClient({
 
           {/* Enregistrer le devis */}
           {result && (
-            <div className="bg-white border-2 border-green-200 rounded-lg p-4 mt-4">
+            <div className="bg-white border-2 border-green-200 rounded-lg p-4">
               <h2 className="text-sm font-semibold text-green-800 uppercase mb-3">
                 {edition ? (creerNouvelleVersion ? "Enregistrer une nouvelle version" : "Enregistrer les modifications") : "Enregistrer ce devis"}
               </h2>
@@ -667,6 +672,7 @@ export default function SimulateurClient({
               </form>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

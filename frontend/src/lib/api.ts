@@ -90,11 +90,15 @@ export interface ContenuPack {
   socle_obligatoire: boolean;
   personnalise: boolean;
   herite: PrestationPack[];
+  // Webflow : accroche / intro / delai_reponse / prestations.
+  // Shopify : texte_court / texte_detaille / delai_reponse.
   contenu: {
-    accroche: string;
-    intro: string;
+    accroche?: string;
+    intro?: string;
     delai_reponse: string;
-    prestations: PrestationPack[];
+    prestations?: PrestationPack[];
+    texte_court?: string;
+    texte_detaille?: string;
   };
 }
 

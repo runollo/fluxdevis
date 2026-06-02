@@ -26,9 +26,11 @@ class Option(Base, TimestampMixin):
     # OPTION_SETUP, OPTION_RECURRENT, PACK
     type_ligne: Mapped[str] = mapped_column(String(20))
 
-    # Donnees source (editables)
-    heures_setup: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
-    heures_mensuel: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=0)
+    # Donnees source (editables). 4 decimales sur les heures : permet d'atteindre
+    # un prix de vente mensuel cible precis (ex. maintenance Shopify 35/49/79/129 EUR)
+    # en n'ajustant que les heures, prix/heure et marge restant figes.
+    heures_setup: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
+    heures_mensuel: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
     prix_heure: Mapped[Decimal] = mapped_column(Numeric(8, 2), default=27)
     taux_marge: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.30"))
 

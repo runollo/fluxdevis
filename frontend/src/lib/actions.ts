@@ -82,6 +82,10 @@ export async function saveContenuPack(formData: FormData) {
     prestations: prestations
       .filter((p) => (p.titre || "").trim())
       .map((p) => ({ titre: p.titre, detail: p.detail || "" })),
+    // Champs Shopify (textes auto-portants) ; le backend ne retient que ceux
+    // pertinents pour la famille du pack.
+    texte_court: (formData.get("texte_court") as string) || "",
+    texte_detaille: (formData.get("texte_detaille") as string) || "",
   };
   await serverPatch(`/options/${id}/contenu-pack`, data);
   redirect(`/catalogue/option?id=${id}&pack_maj=1`);

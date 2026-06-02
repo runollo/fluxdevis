@@ -142,10 +142,14 @@ class PrestationItem(BaseModel):
 
 
 class ContenuPackUpdate(BaseModel):
+    # Webflow : accroche / intro / delai / prestations propres au niveau.
+    # Shopify : texte_court / texte_detaille / delai (textes auto-portants).
     accroche: str | None = None
     intro: str | None = None
     delai_reponse: str | None = None
     prestations: list[PrestationItem] | None = None
+    texte_court: str | None = None
+    texte_detaille: str | None = None
 
 
 async def _pack_ou_404(option_id: int, db: AsyncSession) -> Option:
@@ -160,34 +164,45 @@ async def _pack_ou_404(option_id: int, db: AsyncSession) -> Option:
 
 
 def _contenu_pack_payload(option: Option, overrides: dict) -> dict:
-    """Construit la reponse contenu-pack : niveau propre (editable) + herite (lecture seule)."""
+    """Construit la reponse contenu-pack selon la famille.
+
+    Shopify : textes auto-portants (court / detaille / delai), pas d'heritage.
+    Webflow : modele cumulatif (niveau propre editable + herite en lecture seule).
+    """
     code = (option.code or "").strip()
     pack = PACKS_MAINTENANCE[code]
-
-    propre_prest = _prestations_propres(code, pack, overrides)
-    contenu = {
-        "accroche": _champ_pack(code, pack, overrides, "accroche") or "",
-        "intro": _champ_pack(code, pack, overrides, "intro") or "",
-        "delai_reponse": _champ_pack(code, pack, overrides, "delai_reponse") or "",
-        "prestations": [{"titre": t, "detail": d} for t, d in propre_prest],
-    }
-
+    famille = pack["famille"]
     herite: list[dict] = []
-    parent_code = pack.get("herite_de")
-    if parent_code:
-        pc = contenu_cumule(parent_code, overrides)
-        if pc:
-            herite = [
-                {"titre": p["titre"], "detail": p["detail"], "niveau": p["niveau"]}
-                for p in pc["prestations"]
-            ]
+
+    if famille == "Shopify":
+        contenu = {
+            "texte_court": _champ_pack(code, pack, overrides, "texte_court") or "",
+            "texte_detaille": _champ_pack(code, pack, overrides, "texte_detaille") or "",
+            "delai_reponse": _champ_pack(code, pack, overrides, "delai_reponse") or "",
+        }
+    else:
+        propre_prest = _prestations_propres(code, pack, overrides)
+        contenu = {
+            "accroche": _champ_pack(code, pack, overrides, "accroche") or "",
+            "intro": _champ_pack(code, pack, overrides, "intro") or "",
+            "delai_reponse": _champ_pack(code, pack, overrides, "delai_reponse") or "",
+            "prestations": [{"titre": t, "detail": d} for t, d in propre_prest],
+        }
+        parent_code = pack.get("herite_de")
+        if parent_code:
+            pc = contenu_cumule(parent_code, overrides)
+            if pc:
+                herite = [
+                    {"titre": p["titre"], "detail": p["detail"], "niveau": p["niveau"]}
+                    for p in pc["prestations"]
+                ]
 
     return {
         "option_id": option.id,
         "code": code,
         "nom": option.nom,
         "niveau": pack["niveau"],
-        "famille": pack["famille"],
+        "famille": famille,
         "famille_label": pack["famille_label"],
         "socle_obligatoire": pack["socle_obligatoire"],
         "personnalise": code in overrides,  # True si un override base existe
@@ -209,18 +224,29 @@ async def get_contenu_pack(option_id: int, db: AsyncSession = Depends(get_db)):
 async def update_contenu_pack(
     option_id: int, data: ContenuPackUpdate, db: AsyncSession = Depends(get_db)
 ):
-    """Enregistre le descriptif PROPRE au niveau dans Option.contenu_pack (override)."""
+    """Enregistre le descriptif du pack dans Option.contenu_pack (override).
+
+    Le format depend de la famille : textes auto-portants pour Shopify, modele
+    cumulatif (prestations propres) pour Webflow."""
     option = await _pack_ou_404(option_id, db)
-    option.contenu_pack = {
-        "accroche": (data.accroche or "").strip(),
-        "intro": (data.intro or "").strip(),
-        "delai_reponse": (data.delai_reponse or "").strip(),
-        "prestations": [
-            {"titre": p.titre.strip(), "detail": (p.detail or "").strip()}
-            for p in (data.prestations or [])
-            if p.titre.strip()
-        ],
-    }
+    famille = PACKS_MAINTENANCE[(option.code or "").strip()]["famille"]
+    if famille == "Shopify":
+        option.contenu_pack = {
+            "texte_court": (data.texte_court or "").strip(),
+            "texte_detaille": (data.texte_detaille or "").strip(),
+            "delai_reponse": (data.delai_reponse or "").strip(),
+        }
+    else:
+        option.contenu_pack = {
+            "accroche": (data.accroche or "").strip(),
+            "intro": (data.intro or "").strip(),
+            "delai_reponse": (data.delai_reponse or "").strip(),
+            "prestations": [
+                {"titre": p.titre.strip(), "detail": (p.detail or "").strip()}
+                for p in (data.prestations or [])
+                if p.titre.strip()
+            ],
+        }
     await db.commit()
     await db.refresh(option)
     overrides = await charger_overrides_packs(db)

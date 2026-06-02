@@ -21,7 +21,7 @@ from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, Sta
 from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis, remplacer_prefixe_reference
 from app.services.generation_devis import (
-    generer_devis, repartition_echeances, charger_overrides_packs,
+    generer_devis, repartition_echeances, charger_overrides_packs, charger_heures_packs,
 )
 from app.services.echeances import dates_echeancier
 from app.services.export_excel import export_devis_xlsx
@@ -902,7 +902,9 @@ async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
 
     overrides_packs = await charger_overrides_packs(db)
-    buf = generer_devis(devis, societe, overrides_packs=overrides_packs)
+    heures_packs = await charger_heures_packs(db)
+    buf = generer_devis(devis, societe, overrides_packs=overrides_packs,
+                        heures_packs=heures_packs)
     prefixe_nom = "Proposition" if devis.document_type == DOC_PROPOSITION else "Devis"
     filename = f"{prefixe_nom}_{devis.reference}.docx"
     return StreamingResponse(

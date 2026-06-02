@@ -113,6 +113,10 @@ PACKS_MAINTENANCE: dict[str, dict] = {
     },
 
     # --- Famille 2 : Sites e-commerce Shopify (hebergement exclu) ---
+    # Pour Shopify, le descriptif affiche au client repose sur deux textes
+    # auto-portants : `texte_court` (devis simple / proposition budgetaire) et
+    # `texte_detaille` (contrat / annexe). Les `prestations` (modele Webflow
+    # cumulatif) ne sont pas utilisees a l'affichage pour Shopify.
     "SHOPIFY_MAINT_ESS": {
         "famille": "Shopify",
         "famille_label": "Sites e-commerce — Shopify (hébergement exclu)",
@@ -121,6 +125,25 @@ PACKS_MAINTENANCE: dict[str, dict] = {
         "accroche": "La boutique est surveillée et sécurisée.",
         "intro": "Ce pack constitue le socle minimal requis pour garantir le bon "
                  "fonctionnement de la boutique :",
+        "texte_court": (
+            "Socle minimal de surveillance de la boutique Shopify : contrôle de "
+            "l'accessibilité, sécurité de base, correctifs techniques imputables à la "
+            "configuration réalisée et assistance par email. Abonnement Shopify et "
+            "applications payantes non inclus."
+        ),
+        "texte_detaille": (
+            "La formule Essentielle constitue le socle minimal de maintenance de la "
+            "boutique Shopify. Elle comprend le contrôle régulier de l'accessibilité du "
+            "site, la vérification du bon fonctionnement des pages principales, du "
+            "formulaire de contact et du parcours principal. Elle inclut également le "
+            "contrôle des accès, les recommandations de sécurité, la vérification des "
+            "configurations à risque et la correction des anomalies directement "
+            "imputables aux éléments mis en place par le Prestataire. L'assistance est "
+            "assurée par email. Le délai de réponse est de 48 heures ouvrées. Cette "
+            "formule ne comprend pas les modifications courantes de contenus, les "
+            "évolutions graphiques, les optimisations catalogue, la mise en ligne de "
+            "produits ou les développements spécifiques."
+        ),
         "prestations": [
             ("Supervision et continuité",
              "contrôle régulier de l'accessibilité du site et vérification du bon "
@@ -143,6 +166,26 @@ PACKS_MAINTENANCE: dict[str, dict] = {
         "socle_obligatoire": False,
         "accroche": "La boutique est surveillée, sécurisée et corrigée sur demande.",
         "intro": None,
+        "texte_court": (
+            "Maintenance de suivi pour boutique Shopify : supervision, sécurité, "
+            "correctifs techniques, interventions correctives mineures, contrôle du "
+            "parcours d'achat et assistance prioritaire par email. Abonnement Shopify et "
+            "applications payantes non inclus."
+        ),
+        "texte_detaille": (
+            "La formule Standard inclut l'ensemble des prestations de la formule "
+            "Essentielle, complétées par des interventions correctives mineures sur "
+            "demande du Client. Ces interventions peuvent porter sur des ajustements "
+            "ponctuels de textes, liens, composants, affichage, mise en page ou éléments "
+            "simples de navigation. Elle comprend également une supervision "
+            "transactionnelle du parcours e-commerce : vérification du checkout, des "
+            "paiements, des notifications de commande et des principales fonctionnalités "
+            "liées à la vente en ligne. Le support est prioritaire par rapport à la "
+            "formule Essentielle. Le délai de réponse est de 24 heures ouvrées. Cette "
+            "formule ne comprend pas les évolutions fonctionnelles, les refontes de "
+            "sections, les optimisations catalogue approfondies, la rédaction de contenus "
+            "ou la mise en ligne régulière de nouveaux produits."
+        ),
         "prestations": [
             ("Interventions correctives sur demande",
              "corrections mineures et ajustements ponctuels de la boutique (textes, "
@@ -163,6 +206,26 @@ PACKS_MAINTENANCE: dict[str, dict] = {
         "socle_obligatoire": False,
         "accroche": "La boutique est surveillée, corrigée et améliorée en continu.",
         "intro": None,
+        "texte_court": (
+            "Maintenance avancée pour boutique Shopify : supervision, sécurité, "
+            "correctifs, ajustements mineurs, contrôle e-commerce, évolutions simples et "
+            "optimisations ponctuelles du catalogue. Abonnement Shopify et applications "
+            "payantes non inclus."
+        ),
+        "texte_detaille": (
+            "La formule Pro inclut l'ensemble des prestations de la formule Standard, "
+            "complétées par des évolutions mineures et des optimisations simples de la "
+            "boutique. Elle peut comprendre l'ajout ou la modification légère de sections "
+            "existantes, l'ajustement de la mise en page, l'amélioration de blocs de "
+            "contenu, la correction d'incohérences visibles dans le catalogue, "
+            "l'optimisation ponctuelle de fiches produits, la vérification des collections "
+            "et les ajustements simples du parcours d'achat. Le délai de réponse est de "
+            "12 heures ouvrées. Cette formule est adaptée aux boutiques Shopify "
+            "nécessitant un suivi régulier sans accompagnement stratégique mensuel. Elle "
+            "ne comprend pas la rédaction de fiches produits, la création d'articles de "
+            "blog, les campagnes marketing, les développements spécifiques, les refontes "
+            "complètes de pages ou la mise en ligne régulière de contenus en volume."
+        ),
         "prestations": [
             ("Évolutions mineures",
              "améliorations ponctuelles de la boutique à l'initiative du Prestataire ou "
@@ -183,6 +246,26 @@ PACKS_MAINTENANCE: dict[str, dict] = {
         "socle_obligatoire": False,
         "accroche": "La boutique est surveillée, améliorée et accompagnée stratégiquement.",
         "intro": None,
+        "texte_court": (
+            "Maintenance renforcée pour boutique Shopify : suivi complet, optimisations, "
+            "recommandations mensuelles, accompagnement prioritaire et assistance à la "
+            "mise en ligne de contenus ou produits fournis par le Client. Abonnement "
+            "Shopify et applications payantes non inclus."
+        ),
+        "texte_detaille": (
+            "La formule Premium inclut l'ensemble des prestations de la formule Pro, "
+            "complétées par un accompagnement renforcé de la boutique. Elle comprend un "
+            "suivi mensuel avec recommandations portant sur l'ergonomie, le parcours "
+            "d'achat, le catalogue, la performance technique et la visibilité. Un point "
+            "mensuel peut être proposé sous forme d'email de synthèse ou de "
+            "visioconférence courte. Elle inclut également une assistance à la mise en "
+            "ligne de contenus ou de produits fournis par le Client, dans la limite du "
+            "temps inclus. Le support est traité en priorité renforcée. Le délai de "
+            "réponse est de 12 heures ouvrées. Cette formule ne comprend pas la rédaction "
+            "complète de contenus, la production graphique avancée, les campagnes "
+            "publicitaires, l'email marketing récurrent, les développements spécifiques "
+            "ou les évolutions majeures, qui feront l'objet d'un devis complémentaire."
+        ),
         "prestations": [
             ("Suivi régulier et recommandations",
              "le Prestataire effectue un suivi mensuel de la boutique et formule des "
@@ -277,5 +360,9 @@ def contenu_cumule(code: str, overrides: dict | None = None) -> dict | None:
         "intro": _champ_pack(code, pack, overrides, "intro"),
         "delai_reponse": _champ_pack(code, pack, overrides, "delai_reponse"),
         "prestations": prestations,
+        # Textes auto-portants utilises pour la famille Shopify (court = devis/PB,
+        # detaille = contrat/annexe). None pour Webflow (qui utilise les prestations).
+        "texte_court": _champ_pack(code, pack, overrides, "texte_court"),
+        "texte_detaille": _champ_pack(code, pack, overrides, "texte_detaille"),
         "rappel": RAPPEL_SHOPIFY if pack["famille"] == "Shopify" else None,
     }

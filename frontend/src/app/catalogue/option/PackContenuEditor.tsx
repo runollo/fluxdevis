@@ -1,28 +1,17 @@
 "use client";
 
 // Editeur du CONTENU d'un pack de maintenance (descriptif affiche dans le devis).
-// Modele CUMULATIF : on edite uniquement ce que le niveau AJOUTE ; les prestations
-// heritees du pack inferieur sont affichees en lecture seule pour le contexte.
-// Le defaut vient du fichier backend packs_maintenance ; l'edition est persistee
-// dans Option.contenu_pack via la Server Action saveContenuPack.
+// Deux modeles selon la famille :
+//  - Shopify : textes auto-portants (court = devis/PB, detaille = contrat/annexe) + delai.
+//  - Webflow : modele CUMULATIF (prestations propres au niveau + herite en lecture seule).
+// Defaut = fichier backend packs_maintenance ; edition persistee dans Option.contenu_pack.
 
 import { useState } from "react";
 import { saveContenuPack, resetContenuPack } from "@/lib/actions";
 import type { ContenuPack, PrestationPack } from "@/lib/api";
 
 export default function PackContenuEditor({ data }: { data: ContenuPack }) {
-  const [accroche, setAccroche] = useState(data.contenu.accroche);
-  const [intro, setIntro] = useState(data.contenu.intro);
-  const [delai, setDelai] = useState(data.contenu.delai_reponse);
-  const [prestations, setPrestations] = useState<PrestationPack[]>(
-    data.contenu.prestations.map((p) => ({ titre: p.titre, detail: p.detail }))
-  );
-
-  const setPresta = (i: number, patch: Partial<PrestationPack>) =>
-    setPrestations((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)));
-  const addPresta = () => setPrestations((arr) => [...arr, { titre: "", detail: "" }]);
-  const removePresta = (i: number) => setPrestations((arr) => arr.filter((_, j) => j !== i));
-
+  const isShopify = data.famille === "Shopify";
   return (
     <div className="max-w-2xl mt-6 bg-white border rounded-lg p-4 sm:p-6">
       <div className="flex items-baseline justify-between gap-3 mb-1">
@@ -35,12 +24,92 @@ export default function PackContenuEditor({ data }: { data: ContenuPack }) {
           <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">Par defaut</span>
         )}
       </div>
-      <p className="text-xs text-gray-400 mb-4">
-        {data.famille_label}. Modifiez ce que ce niveau ajoute ; les prestations heritees
-        du niveau inferieur sont reprises automatiquement.
+      <p className="text-xs text-gray-400 mb-4">{data.famille_label}.</p>
+
+      {isShopify
+        ? <EditeurShopify data={data} />
+        : <EditeurWebflow data={data} />}
+
+      {data.personnalise && (
+        <form action={resetContenuPack} className="mt-3">
+          <input type="hidden" name="id" value={data.option_id} />
+          <button type="submit"
+            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg font-medium text-sm">
+            Reinitialiser au contenu par defaut
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
+// --- Shopify : texte court (devis/PB) + texte detaille (contrat) + delai ---------
+function EditeurShopify({ data }: { data: ContenuPack }) {
+  const [court, setCourt] = useState(data.contenu.texte_court ?? "");
+  const [detaille, setDetaille] = useState(data.contenu.texte_detaille ?? "");
+  const [delai, setDelai] = useState(data.contenu.delai_reponse ?? "");
+
+  return (
+    <form action={saveContenuPack} className="space-y-4">
+      <input type="hidden" name="id" value={data.option_id} />
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Texte court <span className="text-gray-400 font-normal">(devis simple / proposition budgetaire)</span>
+        </label>
+        <textarea value={court} onChange={(e) => setCourt(e.target.value)} name="texte_court" rows={3}
+          className="w-full border rounded px-3 py-2.5 text-sm"
+          placeholder="Resume affiche dans le bloc maintenance du devis." />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Texte detaille <span className="text-gray-400 font-normal">(contrat / annexe)</span>
+        </label>
+        <textarea value={detaille} onChange={(e) => setDetaille(e.target.value)} name="texte_detaille" rows={7}
+          className="w-full border rounded px-3 py-2.5 text-sm"
+          placeholder="Descriptif complet affiche en annexe du devis contractuel." />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Delai de reponse</label>
+        <input value={delai} onChange={(e) => setDelai(e.target.value)} name="delai_reponse"
+          className="w-full border rounded px-3 py-2.5 text-sm" placeholder="ex. 48 heures ouvrees" />
+      </div>
+
+      <p className="text-xs text-gray-400">
+        Le temps inclus mensuel est calcule automatiquement a partir des heures du pack
+        (champ Heures mensuel ci-dessus) : il n&apos;est pas a saisir ici.
       </p>
 
-      {/* Herite (lecture seule) */}
+      <button type="submit" className="px-6 py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">
+        Enregistrer le contenu
+      </button>
+    </form>
+  );
+}
+
+// --- Webflow : modele cumulatif (prestations propres + herite lecture seule) -----
+function EditeurWebflow({ data }: { data: ContenuPack }) {
+  const [accroche, setAccroche] = useState(data.contenu.accroche ?? "");
+  const [intro, setIntro] = useState(data.contenu.intro ?? "");
+  const [delai, setDelai] = useState(data.contenu.delai_reponse ?? "");
+  const [prestations, setPrestations] = useState<PrestationPack[]>(
+    (data.contenu.prestations ?? []).map((p) => ({ titre: p.titre, detail: p.detail }))
+  );
+
+  const setPresta = (i: number, patch: Partial<PrestationPack>) =>
+    setPrestations((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)));
+  const addPresta = () => setPrestations((arr) => [...arr, { titre: "", detail: "" }]);
+  const removePresta = (i: number) => setPrestations((arr) => arr.filter((_, j) => j !== i));
+
+  return (
+    <>
+      <p className="text-xs text-gray-400 mb-4 -mt-3">
+        Modifiez ce que ce niveau ajoute ; les prestations heritees du niveau inferieur
+        sont reprises automatiquement.
+      </p>
+
       {data.herite.length > 0 && (
         <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
           <p className="text-xs font-semibold text-gray-500 mb-2">
@@ -114,24 +183,10 @@ export default function PackContenuEditor({ data }: { data: ContenuPack }) {
           </div>
         </div>
 
-        <div className="flex gap-3 pt-2">
-          <button type="submit"
-            className="px-6 py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">
-            Enregistrer le contenu
-          </button>
-        </div>
+        <button type="submit" className="px-6 py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">
+          Enregistrer le contenu
+        </button>
       </form>
-
-      {/* Reinitialisation au contenu par defaut (formulaire distinct) */}
-      {data.personnalise && (
-        <form action={resetContenuPack} className="mt-3">
-          <input type="hidden" name="id" value={data.option_id} />
-          <button type="submit"
-            className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg font-medium text-sm">
-            Reinitialiser au contenu par defaut
-          </button>
-        </form>
-      )}
-    </div>
+    </>
   );
 }

@@ -176,13 +176,43 @@ async def charger_overrides_packs(db) -> dict:
     return {code: cp for code, cp in rows if cp}
 
 
-def generer_devis(devis, societe, overrides_packs: dict | None = None) -> BytesIO:
+async def charger_heures_packs(db) -> dict:
+    """Charge les heures mensuelles catalogue des packs : {code: heures_mensuel}.
+
+    Sert a afficher un "temps inclus" coherent avec les heures reellement saisies
+    (le devis ne fige pas les heures ; le temps inclus est un descriptif courant).
+    """
+    rows = (await db.execute(
+        select(Option.code, Option.heures_mensuel).where(Option.type_ligne == "PACK")
+    )).all()
+    return {code: h for code, h in rows}
+
+
+def _fmt_temps_inclus(heures) -> str | None:
+    """Formate un volume d'heures decimales en 'XhMM' arrondi au quart d'heure.
+
+    Ex : 1.0802 -> '1h00', 1.5123 -> '1h30', 2.4383 -> '2h30'. Renvoie None si nul.
+    """
+    if not heures:
+        return None
+    total_min = int(round(float(heures) * 60 / 15)) * 15
+    if total_min <= 0:
+        return None
+    h, m = divmod(total_min, 60)
+    return f"{h}h{m:02d}"
+
+
+def generer_devis(devis, societe, overrides_packs: dict | None = None,
+                  heures_packs: dict | None = None) -> BytesIO:
     """Genere un devis Word oriente client et retourne un buffer BytesIO.
 
     overrides_packs : dict {code_pack: contenu_pack} issu de la base, pour surcharger
     le descriptif des packs de maintenance (cf. packs_maintenance.contenu_cumule).
+    heures_packs : dict {code_pack: heures_mensuel} catalogue, pour afficher un temps
+    inclus coherent avec les heures reellement saisies (Shopify).
     """
     overrides_packs = overrides_packs or {}
+    heures_packs = heures_packs or {}
     doc = Document()
     setup_page(doc)
     force_arial(doc)
@@ -220,8 +250,11 @@ def generer_devis(devis, societe, overrides_packs: dict | None = None) -> BytesI
     # Descriptif de la maintenance : version courte pour Shopify, detail (annexe) pour
     # Webflow. Pour Shopify, le bloc n'apparait que s'il y a un mensuel (maintenance).
     if _is_shopify(devis):
-        if s["mensuel_net"] > 0 and _add_maintenance_shopify(doc, devis, overrides_packs):
+        if s["mensuel_net"] > 0 and _add_maintenance_shopify(doc, devis, overrides_packs, heures_packs):
             spacer(doc, 8)
+            # Annexe detaillee (texte long) : reservee au devis contractuel, pas a la PB.
+            if not _is_pb(devis) and _add_detail_maintenance_shopify(doc, devis, overrides_packs):
+                spacer(doc, 8)
     else:
         if _add_detail_maintenance(doc, devis, overrides_packs):
             spacer(doc, 8)
@@ -695,22 +728,27 @@ def _add_frais_externes(doc, devis) -> bool:
     return True
 
 
-def _add_maintenance_shopify(doc, devis, overrides_packs: dict | None = None) -> bool:
-    """Version COURTE du bloc maintenance pour Shopify (proposition / devis simple).
-
-    Remplace la longue liste detaillee (reservee a Webflow / a l'annexe) par un
-    paragraphe synthetique. Les parametres maintenance (heures/mois, delai, engagement)
-    sont affiches s'ils sont renseignes dans params_doc. Renvoie True si ecrit.
-    """
-    overrides_packs = overrides_packs or {}
-    # Niveau du pack (si present) pour titrer "PRO" / "PREMIUM".
-    niveau = None
+def _pack_du_devis(devis, overrides_packs: dict):
+    """Retourne (code, contenu_cumule) du 1er pack de maintenance du devis, ou (None, None)."""
     for opt in sorted(devis.options or [], key=lambda x: x.ordre):
         if (opt.type_ligne or "").upper() == "PACK":
-            c = contenu_cumule((opt.code or "").strip(), overrides_packs)
-            if c:
-                niveau = c["niveau"]
-            break
+            code = (opt.code or "").strip()
+            return code, contenu_cumule(code, overrides_packs)
+    return None, None
+
+
+def _add_maintenance_shopify(doc, devis, overrides_packs: dict | None = None,
+                             heures_packs: dict | None = None) -> bool:
+    """Bloc COURT de maintenance Shopify (devis simple / proposition budgetaire).
+
+    Affiche le texte court du pack (editable, cf. contenu_pack ; sinon valeur du
+    fichier packs_maintenance), le temps inclus mensuel coherent avec les heures
+    catalogue, et le delai de reponse du niveau. Renvoie True si ecrit.
+    """
+    overrides_packs = overrides_packs or {}
+    heures_packs = heures_packs or {}
+    code, c = _pack_du_devis(devis, overrides_packs)
+    niveau = c["niveau"] if c else None
 
     titre = "MAINTENANCE & EXPLOITATION"
     if niveau:
@@ -727,39 +765,33 @@ def _add_maintenance_shopify(doc, devis, overrides_packs: dict | None = None) ->
     cell = tbl.rows[0].cells[0]
     cell_w(cell, 18)
 
-    lignes = [
-        "La maintenance assure le suivi régulier de la boutique Shopify après sa mise en ligne.",
-        "Elle comprend les contrôles essentiels du bon fonctionnement du site, du parcours "
-        "d'achat, des formulaires et des notifications.",
-        "Elle inclut les corrections mineures, l'assistance par email et les ajustements "
-        "ponctuels convenus avec le Client.",
-        "Un suivi mensuel permet d'identifier les points d'amélioration liés à l'ergonomie, "
-        "au catalogue, à la performance et à la visibilité.",
-        "Le détail des prestations incluses, limites d'intervention, délais de réponse et "
-        "exclusions est précisé dans l'annexe du contrat/devis.",
-    ]
-    for i, texte in enumerate(lignes):
-        p = cell.paragraphs[0] if i == 0 else cell.add_paragraph()
-        p_fmt(p, before=2 if i == 0 else 1, after=1)
-        run(p, texte, size=8, color=C_TEXT)
+    # Texte court du pack (fallback generique si pack inconnu).
+    texte_court = (c or {}).get("texte_court") or (
+        "Maintenance de la boutique Shopify après mise en ligne. Abonnement Shopify et "
+        "applications payantes non inclus."
+    )
+    p = cell.paragraphs[0]
+    p_fmt(p, before=2, after=1)
+    run(p, texte_court, size=8, color=C_TEXT)
 
-    params = _params(devis)
-    heures = params.get("maintenance_hours_per_month")
-    if heures:
+    # Temps inclus mensuel, derive des heures catalogue du pack (coherence garantie).
+    temps = _fmt_temps_inclus(heures_packs.get(code)) if code else None
+    if temps:
         p = cell.add_paragraph()
         p_fmt(p, before=2, after=1)
+        run(p, "Temps inclus : ", bold=True, size=8, color=C_NAVY)
         run(p,
-            f"La maintenance comprend jusqu'à {heures} heure(s) d'intervention par mois. "
-            "Les demandes dépassant ce volume ou impliquant une évolution fonctionnelle "
-            "significative feront l'objet d'un devis complémentaire.",
-            italic=True, size=8, color=C_NAVY)
+            f"environ {temps} d'intervention par mois (non reportable). Les demandes "
+            "dépassant ce volume ou impliquant une évolution significative font l'objet "
+            "d'un devis complémentaire ou d'une facturation horaire.",
+            size=8, color=C_TEXT)
 
-    # Delai et engagement (affiches uniquement si renseignes).
+    # Delai de reponse : depuis le pack ; repli sur params_doc si besoin.
+    delai = (c or {}).get("delai_reponse") or _params(devis).get("maintenance_response_delay")
+    engagement = _params(devis).get("maintenance_commitment_months")
     extras = []
-    delai = params.get("maintenance_response_delay")
     if delai:
         extras.append(("Délai de réponse", str(delai)))
-    engagement = params.get("maintenance_commitment_months")
     if engagement:
         extras.append(("Engagement initial", f"{engagement} mois"))
     for label, val in extras:
@@ -767,6 +799,37 @@ def _add_maintenance_shopify(doc, devis, overrides_packs: dict | None = None) ->
         p_fmt(p, before=1, after=0)
         run(p, f"{label} : ", bold=True, size=8, color=C_NAVY)
         run(p, val, size=8, color=C_TEXT)
+    return True
+
+
+def _add_detail_maintenance_shopify(doc, devis, overrides_packs: dict | None = None) -> bool:
+    """Annexe DETAILLEE de maintenance Shopify (contrat) : texte long du pack.
+
+    Affiche le texte detaille editable du pack (cf. contenu_pack ; sinon fichier).
+    Renvoie True si un texte detaille existe et a ete ecrit, False sinon.
+    """
+    overrides_packs = overrides_packs or {}
+    _, c = _pack_du_devis(devis, overrides_packs)
+    texte = (c or {}).get("texte_detaille")
+    if not texte:
+        return False
+
+    niveau = c["niveau"].upper() if c and c.get("niveau") else ""
+    tbl_head = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl_head)
+    cell_bg(tbl_head.rows[0].cells[0], HEX_NAVY)
+    cell_text(tbl_head.rows[0].cells[0],
+              f"DÉTAIL DE LA MAINTENANCE ({niveau})" if niveau else "DÉTAIL DE LA MAINTENANCE",
+              bold=True, size=10, color=C_WHITE)
+
+    tbl = doc.add_table(rows=1, cols=1)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+    cell = tbl.rows[0].cells[0]
+    cell_w(cell, 18)
+    p = cell.paragraphs[0]
+    p_fmt(p, before=2, after=2)
+    run(p, texte, size=8, color=C_TEXT)
     return True
 
 

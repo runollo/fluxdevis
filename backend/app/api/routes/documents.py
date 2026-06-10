@@ -64,7 +64,7 @@ async def modifier_document(
 
 @router.delete("/{doc_id}", status_code=204)
 async def archiver_document(doc_id: int, db: AsyncSession = Depends(get_db)):
-    """Met la piece a la corbeille (soft-delete). Restaurable via ?archives."""
+    """Met la piece a la corbeille (soft-delete). Restaurable via /restaurer."""
     doc = await db.get(DevisDocument, doc_id)
     if not doc:
         raise HTTPException(404, "Document non trouve")
@@ -72,3 +72,14 @@ async def archiver_document(doc_id: int, db: AsyncSession = Depends(get_db)):
         doc.archived_at = datetime.now(timezone.utc)
         await db.commit()
     return Response(status_code=204)
+
+
+@router.post("/{doc_id}/restaurer")
+async def restaurer_document(doc_id: int, db: AsyncSession = Depends(get_db)):
+    """Sort la piece de la corbeille (annule le soft-delete)."""
+    doc = await db.get(DevisDocument, doc_id)
+    if not doc:
+        raise HTTPException(404, "Document non trouve")
+    doc.archived_at = None
+    await db.commit()
+    return {"id": doc.id, "ok": True}

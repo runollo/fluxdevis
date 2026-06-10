@@ -706,6 +706,14 @@ export async function supprimerDocument(formData: FormData) {
   redirect(`/devis/detail?id=${devisId}#documents`);
 }
 
+export async function restaurerDocument(formData: FormData) {
+  const devisId = formData.get("devis_id") as string;
+  const docId = formData.get("doc_id") as string;
+  if (!devisId || !docId) redirect("/devis");
+  await serverPost(`/documents/${docId}/restaurer`, {});
+  redirect(`/devis/detail?id=${devisId}#documents`);
+}
+
 export async function definirDocumentOfficiel(formData: FormData) {
   const id = formData.get("devis_id") as string;
   if (!id) redirect("/devis");

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, definirDocumentOfficiel } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +54,7 @@ interface DevisDetail {
   total_ht: string; total_tva: string; total_ttc: string;
   options: OptionLigne[]; lignes: Ligne[]; articles_offerts: ArticleOffert[];
   factures: FactureLien[];
+  documents_archives: DocumentArchive[];
 }
 
 const STATUTS = [
@@ -592,11 +593,15 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                     </p>
                     {doc.commentaire ? <p className="text-xs text-gray-500 mt-0.5">{doc.commentaire}</p> : null}
                   </div>
-                  <form action={supprimerDocument} className="inline shrink-0">
-                    <input type="hidden" name="devis_id" value={d.id} />
-                    <input type="hidden" name="doc_id" value={doc.id} />
-                    <button type="submit" className="text-red-600 hover:underline text-sm font-medium">Supprimer</button>
-                  </form>
+                  <details className="shrink-0">
+                    <summary className="cursor-pointer text-red-600 hover:underline text-sm font-medium list-none">Supprimer</summary>
+                    <form action={supprimerDocument} className="mt-1 flex items-center gap-2">
+                      <input type="hidden" name="devis_id" value={d.id} />
+                      <input type="hidden" name="doc_id" value={doc.id} />
+                      <span className="text-xs text-gray-500">Mettre a la corbeille ?</span>
+                      <button type="submit" className="bg-red-600 text-white text-xs px-2 py-1 rounded">Confirmer</button>
+                    </form>
+                  </details>
                 </div>
                 <details className="mt-1">
                   <summary className="cursor-pointer text-xs text-gray-400">Modifier categorie / tag / commentaire</summary>
@@ -623,6 +628,33 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Corbeille : pieces archivees (soft-delete), restaurables */}
+        {d.documents_archives.length > 0 && (
+          <details className="mt-3">
+            <summary className="cursor-pointer text-xs text-gray-400">
+              Corbeille ({d.documents_archives.length})
+            </summary>
+            <ul className="divide-y mt-1">
+              {d.documents_archives.map(doc => (
+                <li key={doc.id} className="py-2 flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-500 truncate line-through">{doc.nom_fichier}</p>
+                    <p className="text-xs text-gray-400">
+                      <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 mr-1">{CATEGORIE_DOC_LABEL[doc.categorie] || doc.categorie}</span>
+                      {tailleLisible(doc.taille)}
+                    </p>
+                  </div>
+                  <form action={restaurerDocument} className="inline shrink-0">
+                    <input type="hidden" name="devis_id" value={d.id} />
+                    <input type="hidden" name="doc_id" value={doc.id} />
+                    <button type="submit" className="text-[#1A355E] hover:underline text-sm font-medium">Restaurer</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
 
         {/* Ajout d'une piece jointe */}

@@ -477,10 +477,16 @@ Frontend :
   liste des pieces (lien telechargement, badge categorie, tag, taille/date, commentaire,
   edition inline, suppression), formulaire d'ajout (fichier + categorie + tag + commentaire).
 Verifie end-to-end (upload/officiel/detail/download direct+proxy/patch/delete soft, tsc OK).
-A FAIRE EVENTUELLEMENT : vue corbeille + restauration des documents archives (le backend
-soft-delete est en place mais aucune UI ne liste/restaure les pieces archivees) ;
-garde-fou de confirmation a la suppression (aujourd'hui suppression directe, soft donc
-recuperable en base) ; categorie/tag des pieces exploitables ailleurs si besoin.
+
+Corbeille + confirmation (ajoute le 2026-06-10, meme phase) :
+- `POST /api/documents/{id}/restaurer` (annule le soft-delete) ; le detail renvoie aussi
+  `documents_archives[]` (les pieces a la corbeille).
+- frontend : action `restaurerDocument` ; bloc repliable "Corbeille (n)" avec bouton
+  Restaurer sous la liste des pieces actives ; la suppression passe par une confirmation
+  inline (`<details>` -> "Confirmer", sans JS) au lieu d'un clic direct.
+Verifie end-to-end (upload -> corbeille -> restauration, tsc OK).
+A FAIRE EVENTUELLEMENT : categorie/tag des pieces exploitables ailleurs si besoin ;
+purge physique des pieces (aujourd'hui le soft-delete suffit, recuperable en base).
 
 ### Catalogue editable & propositions budgetaires (fait 2026-06-02, `d32216d`) TERMINEE
 Trois evolutions liees, developpees en couches sur des fichiers partages

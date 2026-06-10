@@ -331,6 +331,20 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
             for doc in sorted(d.documents, key=lambda x: x.id)
             if doc.archived_at is None
         ],
+        "documents_archives": [
+            {
+                "id": doc.id,
+                "categorie": doc.categorie,
+                "tag": doc.tag,
+                "commentaire": doc.commentaire,
+                "nom_fichier": doc.nom_fichier,
+                "mime_type": doc.mime_type,
+                "taille": doc.taille,
+                "date_ajout": doc.created_at.isoformat() if doc.created_at else None,
+            }
+            for doc in sorted(d.documents, key=lambda x: x.id)
+            if doc.archived_at is not None
+        ],
     }
 
 

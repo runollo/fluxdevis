@@ -6,6 +6,8 @@ SMTP est resolue depuis la base (page Parametres) puis le .env. Les routes impor
 UNIQUEMENT ce module et lui passent la session db.
 """
 
+from email.utils import parseaddr
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.email_resend import (
@@ -16,7 +18,19 @@ from app.services.email_resend import (
 from app.services.email_smtp import envoyer_email_smtp
 from app.services.parametres import smtp_config
 
-__all__ = ["Email", "PieceJointe", "EmailError", "email_actif", "envoyer_email"]
+__all__ = ["Email", "PieceJointe", "EmailError", "email_actif", "envoyer_email",
+           "adresse_expediteur"]
+
+
+async def adresse_expediteur(db: AsyncSession, societe=None) -> str | None:
+    """Adresse email "nue" de la boite d'envoi (pour s'auto-envoyer un document).
+
+    Tiree de l'expediteur configure (SMTP_FROM), sinon de l'identifiant SMTP,
+    sinon de l'email de la societe.
+    """
+    cfg = await smtp_config(db)
+    _, addr = parseaddr(cfg.sender or "")
+    return addr or cfg.user or (societe.email if societe else None)
 
 
 async def email_actif(db: AsyncSession) -> bool:

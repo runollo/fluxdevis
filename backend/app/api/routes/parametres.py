@@ -4,6 +4,9 @@ Aujourd'hui : configuration de l'envoi d'emails (SMTP). Extensible ensuite. Le m
 de passe SMTP n'est jamais renvoye en clair (seul un booleen indique s'il est defini).
 """
 
+from datetime import date, timedelta
+from types import SimpleNamespace
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -15,6 +18,7 @@ from app.services.parametres import smtp_config
 from app.services.email import Email, envoyer_email, email_actif, EmailError
 from app.services import email_modeles as modeles
 from app.models.societe import Societe
+from app.models.devis import DOC_DEVIS
 
 router = APIRouter()
 
@@ -107,6 +111,35 @@ async def update_parametres(data: ParametresUpdate, db: AsyncSession = Depends(g
 
     await db.commit()
     return await _serialiser(db)
+
+
+@router.get("/apercu")
+async def apercu_email(type: str = "devis", db: AsyncSession = Depends(get_db)):
+    """Apercu (objet + html) d'un email, rendu avec des donnees d'EXEMPLE.
+
+    Reflete les modeles actuellement enregistres. type = devis | facture.
+    """
+    p = await svc.charger(db)
+    societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
+    today = date.today()
+    if type == "facture":
+        facture = SimpleNamespace(
+            numero="F2026-010", date_emission=today, date_echeance=today + timedelta(days=30),
+            periode_debut=None, periode_fin=None, total_ttc="1 200,00",
+        )
+        devis = SimpleNamespace(
+            client_raison_sociale="EXEMPLE SARL", client_interlocuteur="M. Dupont",
+        )
+        objet, html = modeles.construire_email_facture(facture, devis, societe, p)
+    else:
+        devis = SimpleNamespace(
+            document_type=DOC_DEVIS, reference="D-EXEM-2606101200",
+            date_emission=today, date_validite=today + timedelta(days=30),
+            client_raison_sociale="EXEMPLE SARL", client_interlocuteur="M. Dupont",
+            total_ttc="3 600,00",
+        )
+        objet, html = modeles.construire_email_devis(devis, societe, p)
+    return {"objet": objet, "html": html}
 
 
 class TestEmailIn(BaseModel):

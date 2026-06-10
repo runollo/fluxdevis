@@ -440,13 +440,14 @@ export async function envoyerEmailTest(formData: FormData) {
 
 export async function envoyerDevis(formData: FormData) {
   const id = formData.get("devis_id") as string;
+  const mode = (formData.get("mode") as string) || "client";
   if (!id) redirect("/devis");
   try {
-    await serverPost(`/devis/${id}/envoyer`, {});
+    await serverPost(`/devis/${id}/envoyer`, { mode });
   } catch (e) {
     redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
   }
-  redirect(ajouterParam(`/devis/detail?id=${id}`, "devis_envoye", "1"));
+  redirect(ajouterParam(`/devis/detail?id=${id}`, "devis_envoye", mode === "expediteur" ? "moi" : "1"));
 }
 
 export async function emettreFacture(formData: FormData) {
@@ -719,13 +720,14 @@ export async function restaurerFacture(formData: FormData) {
 export async function envoyerFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";
+  const mode = (formData.get("mode") as string) || "client";
   if (!id) redirect("/factures");
   try {
-    await serverPost(`/factures/${id}/envoyer`, {});
+    await serverPost(`/factures/${id}/envoyer`, { mode });
   } catch (e) {
     redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
   }
-  redirect(ajouterParam(retour, "envoye", "1"));
+  redirect(ajouterParam(retour, "envoye", mode === "expediteur" ? "moi" : "1"));
 }
 
 

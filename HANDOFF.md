@@ -470,6 +470,27 @@ futurs reglages) sans toucher au code/.env.
 Verifie end-to-end (GET masque, PATCH conserve le mdp, save via UI, reset, tsc OK).
 ACTIVE PAR BRUNO (2026-06-10) : SMTP OVH configure et envoi de test OK.
 
+### Apercu email + choix du destinataire a l'envoi (fait 2026-06-10) TERMINEE
+- APERCU : `GET /api/parametres/apercu?type=devis|facture` rend l'email (objet + html)
+  avec des donnees d'EXEMPLE (SimpleNamespace) -> reflete les modeles enregistres.
+  Section "Apercu" sur la page Parametres (rendu via dangerouslySetInnerHTML, contenu
+  interne de confiance). Statique : se met a jour apres "Enregistrer les modeles".
+- CHOIX DU DESTINATAIRE : les endpoints `POST /devis/{id}/envoyer` et
+  `POST /factures/{id}/envoyer` acceptent `{mode}` ("client" defaut / "expediteur").
+  mode=expediteur -> envoie a SOI-MEME (adresse `adresse_expediteur(db)` dans email.py :
+  SMTP_FROM/SMTP_USER/societe), sujet prefixe "[A transferer]", pour transferer ensuite
+  depuis Outlook (ajout de pieces/destinataires). Resout aussi la trace "Envoyes" : le
+  transfert depuis Outlook atterrit dans les Envoyes (l'envoi SMTP direct, lui, ne laisse
+  pas de copie dans Outlook > Envoyes — comportement normal SMTP vs IMAP).
+- Frontend : actions `envoyerDevis`/`envoyerFacture` portent `mode` ; 2 boutons sur
+  /devis/detail (devis + chaque facture) et /factures (liste mobile + desktop) ; bandeaux
+  de succes distincts (au client / a moi).
+- PAS ENCORE FAIT (option proposee a Bruno pour la trace) : copie Cci automatique a
+  l'expediteur, et/ou copie dans le dossier Envoyes via IMAP APPEND (fragile : nom du
+  dossier OVH "Sent"/"Envoyes" a confirmer, identifiants IMAP). A decider avec lui.
+Verifie (apercu devis+facture OK avec la vraie signature, boutons presents, tsc OK ;
+envoi reel non declenche pour ne pas spammer).
+
 ### Modeles d'emails editables (objet/corps devis & facture + signature) (fait 2026-06-10) TERMINEE
 Demande : corps d'email pre-rempli selon devis/facture, avec n° et dates, + signature.
 - Colonnes ajoutees sur `Parametres` (migration `c9d0e1f2a3b4`) : `email_signature`,

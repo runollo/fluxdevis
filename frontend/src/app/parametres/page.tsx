@@ -18,6 +18,12 @@ export default async function ParametresPage(
   let p: Parametres | null = null;
   try { p = await serverFetch<Parametres>("/parametres/"); } catch {}
 
+  interface Apercu { objet: string; html: string }
+  let apDevis: Apercu | null = null;
+  let apFacture: Apercu | null = null;
+  try { apDevis = await serverFetch<Apercu>("/parametres/apercu?type=devis"); } catch {}
+  try { apFacture = await serverFetch<Apercu>("/parametres/apercu?type=facture"); } catch {}
+
   if (!p) {
     return (
       <div>
@@ -154,6 +160,39 @@ export default async function ParametresPage(
             Enregistrer les modeles
           </button>
         </form>
+      </section>
+
+      {/* Apercu des emails (donnees d'exemple, reflete les modeles enregistres) */}
+      <section className="bg-white border rounded-lg p-5 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 uppercase mb-1">Apercu</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          Rendu avec des donnees d&apos;exemple. Reflete les modeles enregistres (cliquez
+          &laquo; Enregistrer les modeles &raquo; pour mettre a jour).
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {apDevis && (
+            <div>
+              <p className="text-xs font-semibold text-gray-600 mb-1">Email d&apos;un devis</p>
+              <div className="border rounded">
+                <div className="border-b bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="text-gray-400">Objet :</span> {apDevis.objet}
+                </div>
+                <div className="px-3 py-3 text-sm" dangerouslySetInnerHTML={{ __html: apDevis.html }} />
+              </div>
+            </div>
+          )}
+          {apFacture && (
+            <div>
+              <p className="text-xs font-semibold text-gray-600 mb-1">Email d&apos;une facture</p>
+              <div className="border rounded">
+                <div className="border-b bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                  <span className="text-gray-400">Objet :</span> {apFacture.objet}
+                </div>
+                <div className="px-3 py-3 text-sm" dangerouslySetInnerHTML={{ __html: apFacture.html }} />
+              </div>
+            </div>
+          )}
+        </div>
       </section>
 
       {/* Test d'envoi */}

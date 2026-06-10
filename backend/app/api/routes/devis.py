@@ -30,7 +30,7 @@ from app.services.facturation_maintenance import (
     generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
 )
 from app.services import journal as journal_svc
-from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
 from app.services.parametres import smtp_config, charger as charger_parametres
 from app.services.email_modeles import construire_email_devis
 
@@ -1030,12 +1030,20 @@ async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.post("/{devis_id}/envoyer")
-async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db)):
-    """Envoie le devis (Word en piece jointe) au client par email.
+class EnvoiEmailRequest(BaseModel):
+    # "client" : au client ; "expediteur" : a soi-meme (pour transferer depuis sa messagerie)
+    mode: str = "client"
 
-    Utilise le moteur configure (SMTP de la messagerie pro en priorite). Renvoie
-    400 tant qu'aucun moteur n'est configure ou si l'email du client est absent.
+
+@router.post("/{devis_id}/envoyer")
+async def envoyer_devis_email(
+    devis_id: int, data: EnvoiEmailRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Envoie le devis (Word en piece jointe) par email.
+
+    mode=client (defaut) -> au client ; mode=expediteur -> a soi-meme, pour le
+    transferer ensuite depuis sa messagerie (ajout de pieces/destinataires).
     """
     if not await email_actif(db):
         raise HTTPException(
@@ -1043,13 +1051,19 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
             "Envoi email non configure : renseignez les parametres SMTP dans Parametres.",
         )
     devis, societe, buf, filename = await _generer_devis_docx(devis_id, db)
+    mode = (data.mode if data else "client")
 
-    destinataire = devis.client_email
-    if not destinataire:
-        raise HTTPException(
-            400,
-            "Email client absent du devis : renseignez l'email du client puis recreez le devis.",
-        )
+    if mode == "expediteur":
+        destinataire = await adresse_expediteur(db, societe)
+        if not destinataire:
+            raise HTTPException(400, "Adresse d'envoi introuvable : configurez le SMTP.")
+    else:
+        destinataire = devis.client_email
+        if not destinataire:
+            raise HTTPException(
+                400,
+                "Email client absent du devis : renseignez l'email du client puis recreez le devis.",
+            )
 
     cfg = await smtp_config(db)
     expediteur = cfg.sender
@@ -1058,6 +1072,8 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
 
     params = await charger_parametres(db)
     sujet, html = construire_email_devis(devis, societe, params)
+    if mode == "expediteur":
+        sujet = f"[A transferer] {sujet}"
     email = Email(
         destinataire=destinataire, sujet=sujet, html=html,
         pieces_jointes=[PieceJointe(filename, buf.getvalue(), _DOCX_CT)],
@@ -1067,7 +1083,7 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
         await envoyer_email(db, email, expediteur)
     except EmailError as e:
         raise HTTPException(400, str(e))
-    return {"ok": True, "destinataire": destinataire}
+    return {"ok": True, "destinataire": destinataire, "mode": mode}
 
 
 _TVA = Decimal("0.20")

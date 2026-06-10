@@ -15,7 +15,7 @@ from app.services.facturation_maintenance import devis_maintenance_dus
 from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
-from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
 from app.services.parametres import smtp_config, charger as charger_parametres
 from app.services.email_modeles import construire_email_facture
 from app.core.config import get_settings
@@ -245,13 +245,20 @@ async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db
     )
 
 
-@router.post("/{facture_id}/envoyer")
-async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_db)):
-    """Envoie la facture (Word en piece jointe) au client par email via Resend.
+class EnvoiEmailRequest(BaseModel):
+    # "client" : au client ; "expediteur" : a soi-meme (pour transferer)
+    mode: str = "client"
 
-    FONCTIONNALITE PREVUE, NON ACTIVEE (cf. app/services/email_resend.py et
-    HANDOFF). Tant que RESEND_API_KEY n'est pas renseignee, renvoie 400 et
-    n'envoie rien. A finaliser quand Bruno aura choisi sa solution d'envoi.
+
+@router.post("/{facture_id}/envoyer")
+async def envoyer_facture_email(
+    facture_id: int, data: EnvoiEmailRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Envoie la facture (Word en piece jointe) par email.
+
+    mode=client (defaut) -> au client ; mode=expediteur -> a soi-meme, pour le
+    transferer ensuite depuis sa messagerie.
     """
     if not await email_actif(db):
         raise HTTPException(
@@ -260,16 +267,20 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
         )
 
     facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
+    mode = (data.mode if data else "client")
 
-    destinataire = devis.client_email if devis else None
-    if not destinataire:
-        raise HTTPException(
-            400,
-            "Email client absent du devis : renseignez l'email du client puis regenerez le devis.",
-        )
+    if mode == "expediteur":
+        destinataire = await adresse_expediteur(db, societe)
+        if not destinataire:
+            raise HTTPException(400, "Adresse d'envoi introuvable : configurez le SMTP.")
+    else:
+        destinataire = devis.client_email if devis else None
+        if not destinataire:
+            raise HTTPException(
+                400,
+                "Email client absent du devis : renseignez l'email du client puis regenerez le devis.",
+            )
 
-    # Expediteur affiche : parametre SMTP_FROM si defini, sinon construit depuis la
-    # societe. Pour le SMTP, l'adresse doit correspondre a la boite authentifiee.
     cfg = await smtp_config(db)
     expediteur = cfg.sender
     if not expediteur and societe and societe.email:
@@ -277,6 +288,8 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
 
     params = await charger_parametres(db)
     sujet, html = construire_email_facture(facture, devis, societe, params)
+    if mode == "expediteur":
+        sujet = f"[A transferer] {sujet}"
     email = Email(
         destinataire=destinataire,
         sujet=sujet,
@@ -290,7 +303,7 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     except EmailError as e:
         raise HTTPException(400, str(e))
 
-    return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire}
+    return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire, "mode": mode}
 
 
 @router.post("/{facture_id}/emettre", response_model=FactureSummary)

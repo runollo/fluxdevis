@@ -160,6 +160,11 @@ export default async function FacturesPage(
           Facture envoyee par email au client.
         </div>
       )}
+      {params.envoye === "moi" && (
+        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
+          Facture envoyee sur votre adresse (a transferer).
+        </div>
+      )}
 
       {/* Recherche + filtres (masques en corbeille) */}
       {corbeille ? (
@@ -275,11 +280,14 @@ export default async function FacturesPage(
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
                       Telecharger (Word)
                     </a>
-                    <form action={envoyerFacture}>
+                    <form action={envoyerFacture} className="flex gap-2">
                       <input type="hidden" name="facture_id" value={f.id} />
                       <input type="hidden" name="retour" value="/factures" />
-                      <button type="submit" className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-                        Envoyer par email
+                      <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+                        Au client
+                      </button>
+                      <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
+                        A moi
                       </button>
                     </form>
                     {f.statut === "brouillon" && (
@@ -362,7 +370,8 @@ export default async function FacturesPage(
                           <form action={envoyerFacture} className="inline">
                             <input type="hidden" name="facture_id" value={f.id} />
                             <input type="hidden" name="retour" value="/factures" />
-                            <button type="submit" className="ml-3 text-[#1A355E] hover:underline font-medium">Envoyer</button>
+                            <button type="submit" name="mode" value="client" className="ml-3 text-[#1A355E] hover:underline font-medium">Envoyer</button>
+                            <button type="submit" name="mode" value="expediteur" className="ml-2 text-gray-500 hover:underline text-xs">a moi</button>
                           </form>
                           <ActionsFacture f={f} />
                         </>

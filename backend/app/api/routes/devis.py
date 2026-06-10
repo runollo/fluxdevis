@@ -31,7 +31,8 @@ from app.services.facturation_maintenance import (
 )
 from app.services import journal as journal_svc
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
-from app.services.parametres import smtp_config
+from app.services.parametres import smtp_config, charger as charger_parametres
+from app.services.email_modeles import construire_email_devis
 
 _DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -1055,17 +1056,8 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 
-    marque = (societe.marque or societe.nom) if societe else "FluXweb"
-    contact = devis.client_interlocuteur or "Madame, Monsieur"
-    doc_label = "proposition budgetaire" if devis.document_type == DOC_PROPOSITION else "devis"
-    sujet = f"Votre {doc_label} {devis.reference} - {marque}"
-    html = (
-        f"<p>Bonjour {contact},</p>"
-        f"<p>Veuillez trouver ci-joint votre {doc_label} <strong>{devis.reference}</strong>.</p>"
-        f"<p>Montant : {devis.total_ttc} EUR TTC.</p>"
-        f"<p>Nous restons a votre disposition pour toute question.</p>"
-        f"<p>Cordialement,<br>{marque}</p>"
-    )
+    params = await charger_parametres(db)
+    sujet, html = construire_email_devis(devis, societe, params)
     email = Email(
         destinataire=destinataire, sujet=sujet, html=html,
         pieces_jointes=[PieceJointe(filename, buf.getvalue(), _DOCX_CT)],

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { saveParametres, envoyerEmailTest } from "@/lib/actions";
+import { saveParametres, saveModelesEmail, envoyerEmailTest } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -7,6 +7,8 @@ interface Parametres {
   smtp_host: string | null; smtp_port: number | null; smtp_starttls: boolean | null;
   smtp_user: string | null; smtp_from: string | null;
   smtp_password_defini: boolean; smtp_actif: boolean;
+  email_signature: string; email_objet_devis: string; email_corps_devis: string;
+  email_objet_facture: string; email_corps_facture: string;
 }
 
 export default async function ParametresPage(
@@ -104,6 +106,52 @@ export default async function ParametresPage(
           </div>
           <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">
             Enregistrer
+          </button>
+        </form>
+      </section>
+
+      {/* Modeles d'emails */}
+      <section className="bg-white border rounded-lg p-5 mb-6">
+        <h2 className="text-sm font-semibold text-gray-700 uppercase mb-1">Modeles d&apos;emails</h2>
+        <p className="text-xs text-gray-400 mb-2">
+          Objet, corps et signature des emails envoyes avec le devis ou la facture.
+        </p>
+        <p className="text-[11px] text-gray-400 mb-4 leading-relaxed">
+          Variables (remplacees automatiquement) — communes :{" "}
+          <code>{"{client}"}</code> <code>{"{interlocuteur}"}</code> <code>{"{montant_ttc}"}</code> <code>{"{marque}"}</code>.
+          {" "}Devis : <code>{"{reference}"}</code> <code>{"{date}"}</code> <code>{"{date_validite}"}</code> <code>{"{type_document}"}</code>.
+          {" "}Facture : <code>{"{numero}"}</code> <code>{"{date}"}</code> <code>{"{date_echeance}"}</code> <code>{"{periode}"}</code>.
+        </p>
+
+        <form action={saveModelesEmail} className="space-y-4">
+          <div>
+            <label className="block text-xs text-gray-400 mb-0.5">Signature (commune)</label>
+            <textarea name="email_signature" rows={2} defaultValue={p.email_signature}
+              className="w-full border rounded px-3 py-2 text-sm font-mono" />
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Email accompagnant un devis</p>
+            <label className="block text-xs text-gray-400 mb-0.5">Objet</label>
+            <input name="email_objet_devis" defaultValue={p.email_objet_devis}
+              className="w-full border rounded px-3 py-2 text-sm mb-2" />
+            <label className="block text-xs text-gray-400 mb-0.5">Corps</label>
+            <textarea name="email_corps_devis" rows={5} defaultValue={p.email_corps_devis}
+              className="w-full border rounded px-3 py-2 text-sm font-mono" />
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Email accompagnant une facture</p>
+            <label className="block text-xs text-gray-400 mb-0.5">Objet</label>
+            <input name="email_objet_facture" defaultValue={p.email_objet_facture}
+              className="w-full border rounded px-3 py-2 text-sm mb-2" />
+            <label className="block text-xs text-gray-400 mb-0.5">Corps</label>
+            <textarea name="email_corps_facture" rows={5} defaultValue={p.email_corps_facture}
+              className="w-full border rounded px-3 py-2 text-sm font-mono" />
+          </div>
+
+          <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">
+            Enregistrer les modeles
           </button>
         </form>
       </section>

@@ -6,7 +6,7 @@ Une valeur NULL/vide signifie "utiliser le defaut du .env" (repli). Le mot de pa
 SMTP est stocke en base ; il n'est jamais renvoye en clair par l'API (masque).
 """
 
-from sqlalchemy import String, Integer, Boolean
+from sqlalchemy import String, Integer, Boolean, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
@@ -26,3 +26,12 @@ class Parametres(Base, TimestampMixin):
     smtp_user: Mapped[str | None] = mapped_column(String(200), nullable=True)
     smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Modeles d'emails (corps + objet) et signature. NULL/vide = modele par defaut.
+    # Variables disponibles : {reference}/{numero}, {date}, {date_validite}/{date_echeance},
+    # {client}, {interlocuteur}, {montant_ttc}, {marque}, {type_document}, {periode}.
+    email_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_objet_devis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_corps_devis: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_objet_facture: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_corps_facture: Mapped[str | None] = mapped_column(Text, nullable=True)

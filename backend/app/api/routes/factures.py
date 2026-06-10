@@ -16,7 +16,8 @@ from app.services.numerotation_facture import prochain_numero, numero_en_cours, 
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
-from app.services.parametres import smtp_config
+from app.services.parametres import smtp_config, charger as charger_parametres
+from app.services.email_modeles import construire_email_facture
 from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
@@ -244,36 +245,6 @@ async def telecharger_facture(facture_id: int, db: AsyncSession = Depends(get_db
     )
 
 
-def _corps_email_facture(facture: Facture, devis, societe) -> tuple[str, str]:
-    """Construit (sujet, html) de l'email selon le type de facture."""
-    marque = (societe.marque or societe.nom) if societe else "FluXweb"
-    contact = (devis.client_interlocuteur if devis else None) or "Madame, Monsieur"
-    if facture.type == TypeFacture.MAINTENANCE:
-        sujet = f"Facture de maintenance {facture.numero} - {marque}"
-        periode = ""
-        if facture.periode_debut and facture.periode_fin:
-            periode = (
-                f"<p>Periode : du {facture.periode_debut.strftime('%d/%m/%Y')} "
-                f"au {facture.periode_fin.strftime('%d/%m/%Y')}.</p>"
-            )
-        intro = (
-            "<p>Veuillez trouver ci-joint votre facture de maintenance "
-            "(abonnement reconductible tacitement).</p>"
-        )
-        intro += periode
-    else:
-        sujet = f"Facture {facture.numero} - {marque}"
-        intro = "<p>Veuillez trouver ci-joint votre facture.</p>"
-
-    html = (
-        f"<p>Bonjour {contact},</p>"
-        f"{intro}"
-        f"<p>Montant : {facture.total_ttc} EUR TTC.</p>"
-        f"<p>Cordialement,<br>{marque}</p>"
-    )
-    return sujet, html
-
-
 @router.post("/{facture_id}/envoyer")
 async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_db)):
     """Envoie la facture (Word en piece jointe) au client par email via Resend.
@@ -304,7 +275,8 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 
-    sujet, html = _corps_email_facture(facture, devis, societe)
+    params = await charger_parametres(db)
+    sujet, html = construire_email_facture(facture, devis, societe, params)
     email = Email(
         destinataire=destinataire,
         sujet=sujet,

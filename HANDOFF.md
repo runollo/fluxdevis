@@ -468,6 +468,27 @@ futurs reglages) sans toucher au code/.env.
   desactive tant que non actif). Actions `saveParametres` / `envoyerEmailTest`. Lien
   "Parametres" dans la sidebar desktop (pied) + engrenage dans le header mobile.
 Verifie end-to-end (GET masque, PATCH conserve le mdp, save via UI, reset, tsc OK).
+ACTIVE PAR BRUNO (2026-06-10) : SMTP OVH configure et envoi de test OK.
+
+### Modeles d'emails editables (objet/corps devis & facture + signature) (fait 2026-06-10) TERMINEE
+Demande : corps d'email pre-rempli selon devis/facture, avec n° et dates, + signature.
+- Colonnes ajoutees sur `Parametres` (migration `c9d0e1f2a3b4`) : `email_signature`,
+  `email_objet_devis`, `email_corps_devis`, `email_objet_facture`, `email_corps_facture`.
+- Service `app/services/email_modeles.py` : modeles par DEFAUT + substitution de variables
+  `{cle}` (remplacement simple, token inconnu laisse tel quel) + assemblage HTML (sauts de
+  ligne -> <br>, signature ajoutee). `construire_email_devis` / `construire_email_facture`.
+  Variables : communes `{client}`/`{interlocuteur}`/`{montant_ttc}`/`{marque}` ; devis
+  `{reference}`/`{date}`/`{date_validite}`/`{type_document}` ; facture
+  `{numero}`/`{date}`/`{date_echeance}`/`{periode}`.
+- Routes `devis.envoyer` et `factures.envoyer` utilisent ces builders (l'ancien
+  `_corps_email_facture` hardcode est supprime).
+- API `/api/parametres` : GET renvoie les modeles EFFECTIFS (stocke ou defaut) pour
+  pre-remplir l'UI ; PATCH est PARTIEL (`model_dump(exclude_unset=True)`) -> enregistrer
+  une section n'efface pas l'autre (SMTP vs modeles). Champ vide -> NULL = retour au defaut.
+- Frontend : section "Modeles d'emails" sur `/parametres` (signature + objet/corps devis +
+  objet/corps facture + aide listant les variables). Action `saveModelesEmail`.
+Verifie end-to-end (rendu devis/facture avec variables substituees, save modeles sans
+ecraser le SMTP de Bruno, tsc OK).
 
 ### Envoi email (SMTP de la messagerie pro) — devis + factures (fait 2026-06-10) CODE PRET
 Decision Bruno : pas de service tiers type Resend ; envoi via le SMTP de sa propre

@@ -412,6 +412,22 @@ export async function saveParametres(formData: FormData) {
   redirect("/parametres?ok=1");
 }
 
+export async function saveModelesEmail(formData: FormData) {
+  const body = {
+    email_signature: (formData.get("email_signature") as string) ?? "",
+    email_objet_devis: (formData.get("email_objet_devis") as string) ?? "",
+    email_corps_devis: (formData.get("email_corps_devis") as string) ?? "",
+    email_objet_facture: (formData.get("email_objet_facture") as string) ?? "",
+    email_corps_facture: (formData.get("email_corps_facture") as string) ?? "",
+  };
+  try {
+    await serverPatch(`/parametres/`, body);
+  } catch (e) {
+    redirect(ajouterParam("/parametres", "msg", extraireDetail(e)));
+  }
+  redirect("/parametres?ok=1");
+}
+
 export async function envoyerEmailTest(formData: FormData) {
   const destinataire = (formData.get("destinataire") as string) || "";
   try {

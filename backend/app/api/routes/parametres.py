@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.services import parametres as svc
 from app.services.parametres import smtp_config
 from app.services.email import Email, envoyer_email, email_actif, EmailError
+from app.services import email_modeles as modeles
 from app.models.societe import Societe
 
 router = APIRouter()
@@ -26,6 +27,12 @@ class ParametresOut(BaseModel):
     smtp_from: str | None
     smtp_password_defini: bool
     smtp_actif: bool
+    # Modeles d'emails : valeur EFFECTIVE (stockee ou defaut) pour pre-remplir l'UI.
+    email_signature: str
+    email_objet_devis: str
+    email_corps_devis: str
+    email_objet_facture: str
+    email_corps_facture: str
 
 
 async def _serialiser(db: AsyncSession) -> ParametresOut:
@@ -36,6 +43,11 @@ async def _serialiser(db: AsyncSession) -> ParametresOut:
         smtp_user=p.smtp_user, smtp_from=p.smtp_from,
         smtp_password_defini=bool(p.smtp_password),
         smtp_actif=cfg.actif,
+        email_signature=p.email_signature or modeles.DEFAUT_SIGNATURE,
+        email_objet_devis=p.email_objet_devis or modeles.DEFAUT_OBJET_DEVIS,
+        email_corps_devis=p.email_corps_devis or modeles.DEFAUT_CORPS_DEVIS,
+        email_objet_facture=p.email_objet_facture or modeles.DEFAUT_OBJET_FACTURE,
+        email_corps_facture=p.email_corps_facture or modeles.DEFAUT_CORPS_FACTURE,
     )
 
 
@@ -52,6 +64,11 @@ class ParametresUpdate(BaseModel):
     smtp_user: str | None = None
     smtp_from: str | None = None
     smtp_password: str | None = None  # vide/None = ne pas changer le mot de passe
+    email_signature: str | None = None
+    email_objet_devis: str | None = None
+    email_corps_devis: str | None = None
+    email_objet_facture: str | None = None
+    email_corps_facture: str | None = None
 
 
 def _norm(v):
@@ -64,15 +81,30 @@ def _norm(v):
 
 @router.patch("/", response_model=ParametresOut)
 async def update_parametres(data: ParametresUpdate, db: AsyncSession = Depends(get_db)):
-    """Met a jour les parametres SMTP. Le mot de passe n'est change que si fourni."""
+    """Mise a jour PARTIELLE : ne touche que les champs reellement fournis, pour que
+    la sauvegarde d'une section (SMTP) n'efface pas l'autre (modeles d'emails).
+    Le mot de passe n'est change que si fourni non vide. Un champ texte vide -> NULL
+    (=> repli sur le defaut / .env)."""
     p = await svc.charger(db)
-    p.smtp_host = _norm(data.smtp_host)
-    p.smtp_port = data.smtp_port
-    p.smtp_starttls = data.smtp_starttls
-    p.smtp_user = _norm(data.smtp_user)
-    p.smtp_from = _norm(data.smtp_from)
-    if data.smtp_password is not None and data.smtp_password.strip():
-        p.smtp_password = data.smtp_password
+    fournis = data.model_dump(exclude_unset=True)
+
+    if "smtp_password" in fournis:
+        pw = (fournis.pop("smtp_password") or "").strip()
+        if pw:
+            p.smtp_password = pw
+
+    if "smtp_port" in fournis:
+        p.smtp_port = fournis["smtp_port"]
+    if "smtp_starttls" in fournis:
+        p.smtp_starttls = fournis["smtp_starttls"]
+    for champ in (
+        "smtp_host", "smtp_user", "smtp_from", "email_signature",
+        "email_objet_devis", "email_corps_devis",
+        "email_objet_facture", "email_corps_facture",
+    ):
+        if champ in fournis:
+            setattr(p, champ, _norm(fournis[champ]))
+
     await db.commit()
     return await _serialiser(db)
 

@@ -72,6 +72,21 @@ class Facture(Base, TimestampMixin, SoftDeleteMixin):
     )
 
 
+class CompteurFacture(Base):
+    """Compteur de numerotation des factures, un par annee.
+
+    `dernier` est le dernier numero attribue pour l'annee. Il ne fait
+    qu'augmenter (jamais de reutilisation) : le numero legal F<annee>-NNN est
+    attribue a l'EMISSION via une increment atomique. Garantit une sequence
+    chronologique continue sans trou, independante des brouillons supprimes.
+    """
+
+    __tablename__ = "compteur_facture"
+
+    annee: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dernier: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
 class FactureLigne(Base):
     """Ligne de detail d'une facture."""
 

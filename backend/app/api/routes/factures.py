@@ -12,6 +12,7 @@ from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
+from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email_resend import Email, PieceJointe, envoyer_email, email_actif, EmailError
@@ -95,6 +96,19 @@ async def maintenance_dus(db: AsyncSession = Depends(get_db)):
     automatisation peut ensuite appeler POST /api/devis/{id}/factures-maintenance.
     """
     return await devis_maintenance_dus(db)
+
+
+@router.get("/next-numero", response_model=dict)
+async def next_numero(db: AsyncSession = Depends(get_db)):
+    """Previsualise le prochain numero legal (F<annee>-NNN) SANS le consommer.
+
+    Lecture seule du compteur : le numero n'est reellement attribue qu'a
+    l'emission (POST /{id}/emettre). Sert uniquement a l'affichage. Declaree
+    AVANT GET /{facture_id} pour ne pas etre capturee par le convertisseur int.
+    """
+    year = date.today().year
+    n = await numero_en_cours(db, year)
+    return {"numero": format_numero(year, n + 1)}
 
 
 @router.get("/{facture_id}", response_model=FactureSummary)
@@ -263,16 +277,33 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire}
 
 
-@router.get("/next-numero", response_model=dict)
-async def next_numero(db: AsyncSession = Depends(get_db)):
-    """Genere le prochain numero de facture (F2026-XXX)."""
-    year = date.today().year
-    prefix = f"F{year}-"
-    result = await db.execute(
-        select(func.count()).where(Facture.numero.like(f"{prefix}%"))
+@router.post("/{facture_id}/emettre", response_model=FactureSummary)
+async def emettre_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Emet une facture : attribue le numero legal continu et passe en EMISE.
+
+    Le numero F<annee>-NNN est tire du compteur (sequence chronologique continue)
+    UNIQUEMENT ici. Une facture restee en brouillon n'a qu'un numero provisoire et
+    peut etre supprimee sans creer de trou dans la numerotation legale.
+    L'annee de la sequence est celle de la date d'emission de la facture.
+    """
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut != StatutFacture.BROUILLON:
+        raise HTTPException(400, "Seule une facture en brouillon peut etre emise")
+
+    annee = facture.date_emission.year
+    ancien = facture.numero
+    facture.numero = await prochain_numero(db, annee)
+    facture.statut = StatutFacture.EMISE
+    journal_svc.enregistrer(
+        db, "facture", facture.id, "emission",
+        ancien, facture.numero,
+        motif="Emission : attribution du numero legal",
     )
-    count = result.scalar() or 0
-    return {"numero": f"{prefix}{count + 1:03d}"}
+    await db.commit()
+    await db.refresh(facture)
+    return facture
 
 
 @router.delete("/{facture_id}", status_code=204)

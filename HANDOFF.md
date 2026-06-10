@@ -7,6 +7,19 @@ Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-10
 
 ## POINT DE REPRISE (2026-06-10)
 
+Numerotation legale des factures + import de l'historique reel : TERMINE (2026-06-10).
+FluxDevis devient la SOURCE UNIQUE de facturation. Cf. section "Numerotation legale
+des factures & import historique". En bref :
+- Numero legal `F<annee>-NNN` (ex F2026-010), sequence CONTINUE par annee, attribue a
+  l'EMISSION (bouton "Emettre"), jamais au brouillon -> pas de trou si un brouillon est
+  supprime. Compteur en base (table `compteur_facture`), positionne a 9 pour 2026.
+- Historique importe : OMNIPUB (devis FW-RAI-25122012 + facture F2026-001 emise) et
+  ASK-VSE (devis 16, ref corrigee FW-RAI-26032511 + factures F2026-005..009). Prochaine
+  facture emise = F2026-010.
+- Decision Bruno : on poursuit la serie 2026 existante ; nouvelle numerotation a revoir
+  au 1er janvier 2027 (frontiere d'annee = moment legal pour changer de serie, et caler
+  avec la reforme e-facturation TPE de sept. 2027).
+
 Pieces jointes archivees sur un devis : TERMINE (2026-06-10). Catalogue editable +
 propositions budgetaires + maintenance Shopify affinee etaient deja livres ; phase
 Shopify (devis + factures) achevee au 2026-06-02. Branche `main`.
@@ -433,6 +446,41 @@ Le total reste net du cadeau.
 NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
+### Numerotation legale des factures & import historique (fait 2026-06-10) TERMINEE
+Contexte : FluxDevis devient la source unique de facturation. L'ancien tarificateur
+emettait deja des factures reelles `F2026-001..009` (Omnipub 001-004 dont seule 001
+envoyee, ASK-VSE 005-009). Il fallait (a) une numerotation conforme et (b) importer
+l'existant pour enchainer proprement.
+
+Conformite (art. 242 nonies A CGI) — numero attribue A L'EMISSION :
+- Table `compteur_facture(annee, dernier)` (migration `a7b8c9d0e1f2`, modele
+  `CompteurFacture`). Compteur continu par annee qui ne fait qu'augmenter.
+- Service `app/services/numerotation_facture.py` : `prochain_numero(db, annee)` (UPSERT
+  atomique `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` -> aucun doublon concurrent),
+  `numero_en_cours` (lecture seule), `format_numero` (`F<annee>-NNN`, 3 chiffres min).
+- Les factures sont creees en BROUILLON avec un numero PROVISOIRE (l'ancien format
+  horodate `F-XXXX-...`, via `generer_reference_facture`) ; le numero legal n'est tire
+  qu'a l'emission. Un brouillon supprime ne consomme donc aucun numero (pas de trou).
+- Endpoint `POST /api/factures/{id}/emettre` : brouillon -> EMISE + `prochain_numero`
+  (annee = date_emission). Tracee au journal. `GET /api/factures/next-numero` previsualise
+  SANS consommer (DEPLACE avant `GET /{facture_id}` sinon capture par le convertisseur int).
+- Frontend : action `emettreFacture` ; bouton vert "Emettre (n° legal)" sur les factures
+  brouillon de `/devis/detail` ; le numero provisoire est grise avec mention "(provisoire)".
+  NB : bouton non encore ajoute sur la liste `/factures` (suite facile).
+
+Import historique : `scripts/import_historique.py` (idempotent). Cree OMNIPUB (devis
+`FW-RAI-25122012`, 15/12/2025, plan 25/25/25/25, 6206 TTC + facture `F2026-001` emise) ;
+corrige le devis 16 (ref `FW-RAI-26032511`, mise en ligne 26/05/2026) et remplace ses
+factures de test par les vraies `F2026-005`(payee)/`006`(payee)/`007`(emise, solde)/
+`008`+`009`(maintenance emises) ; positionne le compteur 2026 a 9 -> prochaine = `F2026-010`.
+NB Omnipub : seule la facture 001 a ete reellement emise (les 3 autres versements seront
+emis plus tard via FluxDevis) ; le devis Omnipub est cree avec le total global (detail des
+prestations non disponible dans l'ancien systeme, offre_id=2 par defaut, a affiner).
+Verifie end-to-end (import OK, emission attribue F2026-010 puis remise a 9, tsc OK).
+A FAIRE EVENTUELLEMENT : bouton Emettre sur la liste `/factures` ; affiner le devis Omnipub
+(detail des prestations) ; eventuellement passer date_emission a "aujourd'hui" au moment
+de l'emission (aujourd'hui conservee telle quelle, editable via modifier_facture).
 
 ### Pieces jointes archivees (documents du devis) (fait 2026-06-10) TERMINEE
 Besoin : rattacher a un devis le VRAI document qui fait foi (devis/contrat signe

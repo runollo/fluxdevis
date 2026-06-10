@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, emettreFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -508,12 +508,23 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             {d.factures.map(f => (
               <li key={f.id} className="py-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-mono text-sm truncate">{f.numero}</p>
+                  {f.statut === "brouillon" ? (
+                    <p className="font-mono text-sm truncate text-gray-400">{f.numero} <span className="not-italic text-[10px]">(provisoire)</span></p>
+                  ) : (
+                    <p className="font-mono text-sm truncate">{f.numero}</p>
+                  )}
                   <p className="text-xs text-gray-400">{TYPE_FACTURE[f.type] || f.type}</p>
                   <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${STATUT_FACTURE[f.statut] || "bg-gray-100 text-gray-700"}`}>{f.statut}</span>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium">{eur(f.total_ttc)}</span>
+                  {f.statut === "brouillon" && (
+                    <form action={emettreFacture} className="inline">
+                      <input type="hidden" name="facture_id" value={f.id} />
+                      <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
+                      <button type="submit" className="bg-green-700 text-white text-xs px-2 py-1 rounded font-medium">Émettre (n° légal)</button>
+                    </form>
+                  )}
                   <Link href={`/factures/editer?id=${f.id}&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
                     className="text-[#1A355E] hover:underline text-sm font-medium">Modifier</Link>
                   <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline text-sm font-medium">Telecharger</a>

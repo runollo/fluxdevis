@@ -278,7 +278,7 @@ export default async function FacturesPage(
                       </form>
                     )}
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-                      Telecharger (Word)
+                      Telecharger (PDF)
                     </a>
                     <form action={envoyerFacture} className="flex gap-2">
                       <input type="hidden" name="facture_id" value={f.id} />

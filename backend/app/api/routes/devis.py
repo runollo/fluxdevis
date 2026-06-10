@@ -1,7 +1,7 @@
 """Routes pour les devis."""
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.services import journal as journal_svc
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
 from app.services.parametres import smtp_config, charger as charger_parametres
 from app.services.email_modeles import construire_email_devis
+from app.services.pdf import docx_vers_pdf, PdfError
 
 _DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -1020,13 +1021,24 @@ async def _generer_devis_docx(devis_id: int, db: AsyncSession):
 
 
 @router.get("/{devis_id}/document")
-async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
-    """Genere et retourne le devis au format Word (.docx)."""
+async def telecharger_devis(
+    devis_id: int, format: str = "pdf", db: AsyncSession = Depends(get_db)
+):
+    """Genere et retourne le devis. format=pdf (defaut, non modifiable) ou docx."""
     _, _, buf, filename = await _generer_devis_docx(devis_id, db)
-    return StreamingResponse(
-        buf,
-        media_type=_DOCX_CT,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    if format == "docx":
+        return StreamingResponse(
+            buf, media_type=_DOCX_CT,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    try:
+        pdf = await docx_vers_pdf(buf.getvalue())
+    except PdfError as e:
+        raise HTTPException(503, str(e))
+    pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{pdf_name}"'},
     )
 
 
@@ -1074,9 +1086,14 @@ async def envoyer_devis_email(
     sujet, html = construire_email_devis(devis, societe, params)
     if mode == "expediteur":
         sujet = f"[A transferer] {sujet}"
+    try:
+        pdf = await docx_vers_pdf(buf.getvalue())
+    except PdfError as e:
+        raise HTTPException(503, str(e))
+    pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
     email = Email(
         destinataire=destinataire, sujet=sujet, html=html,
-        pieces_jointes=[PieceJointe(filename, buf.getvalue(), _DOCX_CT)],
+        pieces_jointes=[PieceJointe(pdf_name, pdf, "application/pdf")],
         reply_to=(societe.email if societe else None),
     )
     try:

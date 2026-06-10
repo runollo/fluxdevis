@@ -470,6 +470,30 @@ futurs reglages) sans toucher au code/.env.
 Verifie end-to-end (GET masque, PATCH conserve le mdp, save via UI, reset, tsc OK).
 ACTIVE PAR BRUNO (2026-06-10) : SMTP OVH configure et envoi de test OK.
 
+### Pieces jointes et telechargement en PDF (fait 2026-06-10) CODE PRET (install LibreOffice requise)
+Decision Bruno : envoyer du PDF (non modifiable), et preparer la conformite facture
+electronique. Choix du moteur : LibreOffice headless (fidelite parfaite au rendu Word
+actuel, vs reecriture ReportLab). Bruno a accepte l'install systeme.
+- Service `app/services/pdf.py` : `docx_vers_pdf(bytes) -> bytes` via
+  `soffice --headless --convert-to pdf` (profil UserInstallation dedie par appel ->
+  pas de conflit de verrou ; sous-process via asyncio). `libreoffice_dispo()`,
+  `PdfError`. Si LibreOffice absent -> PdfError -> HTTP 503 explicite.
+- `GET /api/devis/{id}/document` et `/api/factures/{id}/document` : renvoient le PDF par
+  defaut ; `?format=docx` garde le Word (modifiable). Les emails (devis + factures)
+  joignent desormais le PDF.
+- Frontend : libelles "Telecharger le devis (PDF)" + petit lien "version Word (modifiable)"
+  (devis/detail), "Telecharger (PDF)" (factures). Le proxy Next gere deja le binaire.
+- A FAIRE PAR BRUNO (bloquant pour le PDF) :
+    sudo apt install --no-install-recommends libreoffice-core libreoffice-writer
+  Puis tester un telechargement/envoi PDF. Tant que non installe : Word OK, PDF -> 503.
+- ROADMAP conformite (cf. echange 2026-06-10) : Phase 2 = generer Factur-X (PDF/A-3 +
+  XML EN 16931, le XML est le vrai travail nouveau, lib `factur-x`) ; Phase 3 (avant
+  sept. 2027) = transmission via une PDP (canal obligatoire, PAS l'email ; a cadrer avec
+  l'expert-comptable, souvent fourni par son ecosysteme). Le PDF email reste utile en
+  interim et pour le B2C/etranger (hors e-invoicing, e-reporting).
+Verifie : tsc OK, docx toujours dispo, 503 propre sans LibreOffice. (Conversion PDF reelle
+a tester apres install.)
+
 ### Apercu email + choix du destinataire a l'envoi (fait 2026-06-10) TERMINEE
 - APERCU : `GET /api/parametres/apercu?type=devis|facture` rend l'email (objet + html)
   avec des donnees d'EXEMPLE (SimpleNamespace) -> reflete les modeles enregistres.

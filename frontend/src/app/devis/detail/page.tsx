@@ -242,7 +242,11 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
         )}
         <a href={`/api/devis/${d.id}/document`}
           className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium text-center">
-          Telecharger le devis (Word)
+          Telecharger le devis (PDF)
+        </a>
+        <a href={`/api/devis/${d.id}/document?format=docx`}
+          className="px-4 py-1 text-xs text-gray-400 hover:text-gray-600 text-center">
+          version Word (modifiable)
         </a>
         <form action={envoyerDevis} className="flex flex-col gap-1">
           <input type="hidden" name="devis_id" value={d.id} />

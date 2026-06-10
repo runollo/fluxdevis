@@ -280,15 +280,22 @@ export default async function FacturesPage(
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
                       Telecharger (PDF)
                     </a>
-                    <form action={envoyerFacture} className="flex gap-2">
+                    <form action={envoyerFacture}>
                       <input type="hidden" name="facture_id" value={f.id} />
                       <input type="hidden" name="retour" value="/factures" />
-                      <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-                        Au client
-                      </button>
-                      <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
-                        A moi
-                      </button>
+                      <details>
+                        <summary className="cursor-pointer block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium list-none">
+                          Envoyer par email&hellip;
+                        </summary>
+                        <div className="mt-1 flex gap-2">
+                          <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                            Au client{f.client ? ` (${f.client})` : ""}
+                          </button>
+                          <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
+                            A moi
+                          </button>
+                        </div>
+                      </details>
                     </form>
                     {f.statut === "brouillon" && (
                       <Link href={`/factures/confirmer?id=${f.id}&action=archiver`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
@@ -370,8 +377,13 @@ export default async function FacturesPage(
                           <form action={envoyerFacture} className="inline">
                             <input type="hidden" name="facture_id" value={f.id} />
                             <input type="hidden" name="retour" value="/factures" />
-                            <button type="submit" name="mode" value="client" className="ml-3 text-[#1A355E] hover:underline font-medium">Envoyer</button>
-                            <button type="submit" name="mode" value="expediteur" className="ml-2 text-gray-500 hover:underline text-xs">a moi</button>
+                            <details className="inline-block align-middle ml-3">
+                              <summary className="cursor-pointer text-[#1A355E] hover:underline font-medium list-none">Envoyer</summary>
+                              <span className="ml-2 inline-flex gap-2">
+                                <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                                <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                              </span>
+                            </details>
                           </form>
                           <ActionsFacture f={f} />
                         </>

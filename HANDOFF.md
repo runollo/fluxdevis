@@ -506,9 +506,16 @@ a tester apres install.)
   depuis Outlook (ajout de pieces/destinataires). Resout aussi la trace "Envoyes" : le
   transfert depuis Outlook atterrit dans les Envoyes (l'envoi SMTP direct, lui, ne laisse
   pas de copie dans Outlook > Envoyes — comportement normal SMTP vs IMAP).
-- Frontend : actions `envoyerDevis`/`envoyerFacture` portent `mode` ; 2 boutons sur
-  /devis/detail (devis + chaque facture) et /factures (liste mobile + desktop) ; bandeaux
-  de succes distincts (au client / a moi).
+- Frontend : actions `envoyerDevis`/`envoyerFacture` portent `mode` ; bandeaux de succes
+  distincts (au client / a moi).
+- CONFIRMATION avant envoi (2026-06-10) : les boutons d'envoi sont desormais regroupes
+  dans un `<details>` "Envoyer par email..." qui, une fois ouvert, revele 2 boutons
+  explicites "Au client (<nom/email>)" et "A moi" (type=submit, name=mode). Le `<summary>`
+  ne soumet rien (HTML natif) -> impossible d'envoyer en un seul clic, et le destinataire
+  est affiche avant confirmation. Present sur /devis/detail (devis + chaque facture) et
+  /factures (mobile + desktop). Pas de page dediee (le pattern <details> existe deja pour
+  la suppression de documents). Verifie : structure correcte (2 boutons mode), aucun envoi
+  sur ouverture.
 - PAS ENCORE FAIT (option proposee a Bruno pour la trace) : copie Cci automatique a
   l'expediteur, et/ou copie dans le dossier Envoyes via IMAP APPEND (fragile : nom du
   dossier OVH "Sent"/"Envoyes" a confirmer, identifiants IMAP). A decider avec lui.

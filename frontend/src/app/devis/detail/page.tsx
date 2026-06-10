@@ -248,22 +248,30 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           className="px-4 py-1 text-xs text-gray-400 hover:text-gray-600 text-center">
           version Word (modifiable)
         </a>
-        <form action={envoyerDevis} className="flex flex-col gap-1">
+        <form action={envoyerDevis} className="flex flex-col">
           <input type="hidden" name="devis_id" value={d.id} />
-          {d.client_email ? (
-            <button type="submit" name="mode" value="client"
-              className="w-full px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
-              Envoyer au client ({d.client_email})
-            </button>
-          ) : (
-            <span className="px-4 py-1 text-xs text-gray-400 text-center">
-              Renseignez l&apos;email du client pour l&apos;envoyer directement
-            </span>
-          )}
-          <button type="submit" name="mode" value="expediteur"
-            className="w-full px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
-            M&apos;envoyer (pour transferer depuis ma messagerie)
-          </button>
+          <details>
+            <summary className="cursor-pointer w-full px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium text-center list-none">
+              Envoyer par email&hellip;
+            </summary>
+            <div className="mt-1 p-3 border rounded bg-gray-50 flex flex-col gap-2">
+              <p className="text-xs text-gray-500">Confirmez le destinataire :</p>
+              {d.client_email ? (
+                <button type="submit" name="mode" value="client"
+                  className="px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                  Envoyer au client ({d.client_email})
+                </button>
+              ) : (
+                <span className="text-xs text-gray-400">
+                  Email client absent — renseignez-le pour l&apos;envoyer directement.
+                </span>
+              )}
+              <button type="submit" name="mode" value="expediteur"
+                className="px-3 py-2 border border-gray-400 text-gray-700 rounded text-sm font-medium">
+                M&apos;envoyer (pour transferer depuis ma messagerie)
+              </button>
+            </div>
+          </details>
         </form>
         {d.factures.length === 0 && (
           <form action={genererFactures}>
@@ -568,8 +576,13 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                   <form action={envoyerFacture} className="inline">
                     <input type="hidden" name="facture_id" value={f.id} />
                     <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
-                    <button type="submit" name="mode" value="client" className="text-[#1A355E] hover:underline text-sm font-medium">Envoyer</button>
-                    <button type="submit" name="mode" value="expediteur" className="ml-2 text-gray-500 hover:underline text-xs">a moi</button>
+                    <details className="inline-block align-middle">
+                      <summary className="cursor-pointer text-[#1A355E] hover:underline text-sm font-medium list-none">Envoyer</summary>
+                      <span className="ml-2 inline-flex gap-2">
+                        <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                        <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                      </span>
+                    </details>
                   </form>
                   {f.statut === "brouillon" && (
                     <Link href={`/factures/confirmer?id=${f.id}&action=archiver&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}

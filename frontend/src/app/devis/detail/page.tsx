@@ -16,6 +16,15 @@ interface Ligne { designation: string; quantite: number; prix_unitaire_vente: st
 interface ArticleOffert { designation: string; prix_vente: string; }
 interface FactureLien {
   id: number; numero: string; type: string; statut: string; total_ttc: string; date_emission: string; date_echeance: string;
+  nb_envois?: number; dernier_envoi?: string | null; dernier_envoi_mode?: string | null;
+}
+
+function envoiLabel(iso: string, mode?: string | null): string {
+  const d = new Date(iso).toLocaleString("fr-FR", {
+    timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  return `${d} (${mode === "expediteur" ? "a vous" : "au client"})`;
 }
 interface HistoriqueLigne {
   id: number; champ: string; ancienne_valeur: string | null; nouvelle_valeur: string | null;
@@ -583,13 +592,20 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                     <input type="hidden" name="facture_id" value={f.id} />
                     <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
                     <details className="inline-block align-middle">
-                      <summary className="cursor-pointer text-[#1A355E] hover:underline text-sm font-medium list-none">Envoyer</summary>
-                      <span className="ml-2 inline-flex gap-2">
-                        {envoiClientActif && (
-                          <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                      <summary className={`cursor-pointer hover:underline text-sm font-medium list-none ${f.dernier_envoi ? "text-amber-700" : "text-[#1A355E]"}`}>
+                        Envoyer{f.dernier_envoi ? " *" : ""}
+                      </summary>
+                      <div className="mt-1">
+                        {f.dernier_envoi && (
+                          <p className="text-[11px] text-amber-700 mb-1">Deja envoyee le {envoiLabel(f.dernier_envoi, f.dernier_envoi_mode)}{f.nb_envois && f.nb_envois > 1 ? ` — ${f.nb_envois} envois` : ""}. Renvoyer ?</p>
                         )}
-                        <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
-                      </span>
+                        <span className="inline-flex gap-2">
+                          {envoiClientActif && (
+                            <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                          )}
+                          <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                        </span>
+                      </div>
                     </details>
                   </form>
                   {f.statut === "brouillon" && (

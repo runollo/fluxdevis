@@ -217,7 +217,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
             selectinload(Devis.lignes),
             selectinload(Devis.options),
             selectinload(Devis.articles_offerts),
-            selectinload(Devis.factures),
+            selectinload(Devis.factures).selectinload(Facture.envois),
             selectinload(Devis.documents),
         )
     )
@@ -323,6 +323,14 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
                 "statut": f.statut.value, "total_ttc": str(f.total_ttc),
                 "date_emission": f.date_emission.isoformat(),
                 "date_echeance": f.date_echeance.isoformat(),
+                "nb_envois": len(f.envois or []),
+                "dernier_envoi": (
+                    max(f.envois, key=lambda e: e.date_envoi).date_envoi.isoformat()
+                    if f.envois else None
+                ),
+                "dernier_envoi_mode": (
+                    max(f.envois, key=lambda e: e.date_envoi).mode if f.envois else None
+                ),
             }
             for f in sorted(d.factures, key=lambda x: x.id)
             if f.archived_at is None

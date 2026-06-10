@@ -1,8 +1,8 @@
 """Modeles Facture, FactureLigne, Echeance."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from sqlalchemy import String, Numeric, Integer, Date, ForeignKey, Text, Enum as SAEnum
+from sqlalchemy import String, Numeric, Integer, Date, DateTime, ForeignKey, Text, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
@@ -70,6 +70,29 @@ class Facture(Base, TimestampMixin, SoftDeleteMixin):
     echeances: Mapped[list["Echeance"]] = relationship(
         back_populates="facture", cascade="all, delete-orphan"
     )
+    envois: Mapped[list["FactureEnvoi"]] = relationship(
+        back_populates="facture", cascade="all, delete-orphan",
+        order_by="FactureEnvoi.date_envoi",
+    )
+
+
+class FactureEnvoi(Base):
+    """Trace d'un envoi de facture par email (historique + alerte au renvoi)."""
+
+    __tablename__ = "facture_envois"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    facture_id: Mapped[int] = mapped_column(
+        ForeignKey("factures.id", ondelete="CASCADE"), index=True
+    )
+    date_envoi: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    # "client" (envoi direct) ou "expediteur" (a soi-meme, pour transferer).
+    mode: Mapped[str] = mapped_column(String(20))
+    destinataire: Mapped[str] = mapped_column(String(200))
+
+    facture: Mapped["Facture"] = relationship(back_populates="envois")
 
 
 class CompteurFacture(Base):

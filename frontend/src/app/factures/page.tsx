@@ -13,6 +13,17 @@ interface Facture {
   date_emission: string; date_echeance: string; objet: string; total_ttc: string;
   devis_id?: number | null; client?: string | null;
   projet_ref?: string | null; projet_nom?: string | null;
+  nb_envois?: number; dernier_envoi?: string | null; dernier_envoi_mode?: string | null;
+}
+
+// Date+heure d'un envoi, en heure de Paris (independant du fuseau serveur).
+function envoiLabel(iso: string, mode?: string | null): string {
+  const d = new Date(iso).toLocaleString("fr-FR", {
+    timeZone: "Europe/Paris", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+  const m = mode === "expediteur" ? "a vous (transfert)" : "au client";
+  return `${d} (${m})`;
 }
 interface ClientOpt { id: number; raison_sociale: string; }
 interface ProjetOpt { id: number; reference: string; offre_nom?: string }
@@ -291,6 +302,11 @@ export default async function FacturesPage(
                         <summary className="cursor-pointer block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium list-none">
                           Envoyer par email&hellip;
                         </summary>
+                        {f.dernier_envoi && (
+                          <p className="mt-1 text-[11px] text-amber-700">
+                            Deja envoyee le {envoiLabel(f.dernier_envoi, f.dernier_envoi_mode)}{f.nb_envois && f.nb_envois > 1 ? ` — ${f.nb_envois} envois` : ""}. Renvoyer ?
+                          </p>
+                        )}
                         <div className="mt-1 flex gap-2">
                           {envoiClientActif && (
                             <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
@@ -384,13 +400,20 @@ export default async function FacturesPage(
                             <input type="hidden" name="facture_id" value={f.id} />
                             <input type="hidden" name="retour" value="/factures" />
                             <details className="inline-block align-middle ml-3">
-                              <summary className="cursor-pointer text-[#1A355E] hover:underline font-medium list-none">Envoyer</summary>
-                              <span className="ml-2 inline-flex gap-2">
-                                {envoiClientActif && (
-                                  <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                              <summary className={`cursor-pointer hover:underline font-medium list-none ${f.dernier_envoi ? "text-amber-700" : "text-[#1A355E]"}`}>
+                                Envoyer{f.dernier_envoi ? " *" : ""}
+                              </summary>
+                              <div className="mt-1">
+                                {f.dernier_envoi && (
+                                  <p className="text-[11px] text-amber-700 mb-1">Deja envoyee le {envoiLabel(f.dernier_envoi, f.dernier_envoi_mode)}{f.nb_envois && f.nb_envois > 1 ? ` — ${f.nb_envois} envois` : ""}. Renvoyer ?</p>
                                 )}
-                                <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
-                              </span>
+                                <span className="inline-flex gap-2">
+                                  {envoiClientActif && (
+                                    <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                                  )}
+                                  <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                                </span>
+                              </div>
                             </details>
                           </form>
                           <ActionsFacture f={f} />

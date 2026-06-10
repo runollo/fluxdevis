@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.facture import Facture, Echeance, StatutFacture, TypeFacture
+from app.models.facture import Facture, Echeance, StatutFacture, TypeFacture, FactureEnvoi
 from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
@@ -54,6 +54,23 @@ class FactureListItem(BaseModel):
     client: str | None = None
     projet_ref: str | None = None
     projet_nom: str | None = None
+    # Historique d'envoi (pour l'alerte au renvoi).
+    nb_envois: int = 0
+    dernier_envoi: str | None = None  # ISO datetime du dernier envoi
+    dernier_envoi_mode: str | None = None  # client / expediteur
+
+
+def _infos_envoi(facture) -> dict:
+    """Dernier envoi + nombre d'envois d'une facture (relation `envois` chargee)."""
+    envois = list(facture.envois or [])
+    if not envois:
+        return {"nb_envois": 0, "dernier_envoi": None, "dernier_envoi_mode": None}
+    dernier = max(envois, key=lambda e: e.date_envoi)
+    return {
+        "nb_envois": len(envois),
+        "dernier_envoi": dernier.date_envoi.isoformat(),
+        "dernier_envoi_mode": dernier.mode,
+    }
 
 
 @router.get("/", response_model=list[FactureListItem])
@@ -78,7 +95,7 @@ async def list_factures(
     """
     query = (
         select(Facture)
-        .options(selectinload(Facture.devis))
+        .options(selectinload(Facture.devis), selectinload(Facture.envois))
         .order_by(Facture.date_emission.desc(), Facture.id.desc())
     )
     if archives:
@@ -108,6 +125,7 @@ async def list_factures(
             client=f.devis.client_raison_sociale if f.devis else None,
             projet_ref=f.devis.reference if f.devis else None,
             projet_nom=f.devis.offre_nom if f.devis else None,
+            **_infos_envoi(f),
         )
         for f in factures
     ]
@@ -325,6 +343,10 @@ async def envoyer_facture_email(
         resultat = await envoyer_email(db, email, expediteur)
     except EmailError as e:
         raise HTTPException(400, str(e))
+
+    # Trace l'envoi (historique + alerte au renvoi).
+    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire))
+    await db.commit()
 
     return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire, "mode": mode}
 

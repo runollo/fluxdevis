@@ -1,29 +1,34 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-02
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-10
 
 ---
 
-## POINT DE REPRISE (2026-06-02)
+## POINT DE REPRISE (2026-06-10)
 
-Parite Webflow/Shopify ACHEVEE (devis + factures). La phase Shopify est terminee.
-- `f227f59` / `1f6a880` (2026-06-01) : devis Shopify (encart abonnement a charge du
-  client, socle adapte, recap "maintenance & exploitation") + annexe des 8 packs de
-  maintenance. Cf. sections "Phase Shopify" et "Annexe contenu des packs".
-- (2026-06-02) : FACTURES Shopify — detection en source unique `Devis.est_shopify`,
-  objet de la facture de maintenance aligne sur le devis ("Maintenance & exploitation"
-  vs "& hebergement"), mention de bas de facture rappelant l'abonnement plateforme a la
-  charge du client (Shopify), propagation via `routes/factures.py` et `routes/generation.py`.
-  Cf. section "Phase Shopify" (volet FACTURES). Verifie (Word 2 variantes, imports OK).
+Catalogue editable + propositions budgetaires + maintenance Shopify affinee : TERMINES.
+La phase Shopify (devis + factures, parite de wording) etait deja achevee au 2026-06-02.
+Tout est committe, branche `main`, arbre git PROPRE.
+
+Derniers commits (les plus recents en haut) :
+- `608f4ba` (2026-06-02) fix : simulateur — panneau resultats collant scrollable
+  (bloc Enregistrer toujours atteignable). Cf. section "Simulateur — panneau collant".
+- `d37e531` (2026-06-02) feat : maintenance Shopify — nouveaux prix mensuels exacts
+  (35/49/79/129 EUR via heures en 4 decimales) + textes court/detaille editables par
+  pack. Cf. section "Maintenance Shopify — prix et textes".
+- `d32216d` (2026-06-02) feat : propositions budgetaires (type de document devis /
+  proposition_budgetaire), contenu editable des packs (Option.contenu_pack) et options
+  incluses par offre (editeur a cases). Cf. section "Catalogue editable & propositions".
+- `ad783de` / anterieurs : phase Shopify (devis + factures). Cf. "Phase Shopify".
 
 RESTE / OPTIONNEL (pas de dependance, a faire quand utile) :
-1. Exposer l'annexe maintenance dans l'UI (page catalogue / fiche pack) en reutilisant
-   `contenu_cumule(code)` de `backend/app/data/packs_maintenance.py` — utile pour repondre
-   au client en direct.
-2. Envoi email (Resend) : code prevu mais NON ACTIVE. Cf. section "Envoi email (Resend)".
-
-Etat git : a committer (modifs factures Shopify), branche `main`.
+1. Envoi email (Resend) : code prevu mais NON ACTIVE — c'est le SEUL maillon manquant du
+   flux quotidien (aujourd'hui : telechargement Word puis envoi manuel). Bloque sur une
+   decision metier de Bruno (fournisseur ? PDF vs Word ?). Cf. "Envoi email (Resend)".
+2. UI annexe maintenance grand public : l'editeur de contenu de pack existe deja dans
+   /catalogue/option ; reste eventuellement une vue de consultation cote client. Confort.
+3. Auth multi-utilisateur (Phase E) : differee (Bruno seul utilisateur).
 
 ---
 
@@ -424,6 +429,57 @@ NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
 
+### Catalogue editable & propositions budgetaires (fait 2026-06-02, `d32216d`) TERMINEE
+Trois evolutions liees, developpees en couches sur des fichiers partages
+(`generation_devis.py`, `actions.ts`, `api.ts`) -> un seul commit.
+
+Propositions budgetaires :
+- `Devis.document_type` : `devis` ou `proposition_budgetaire` (prefixe de reference
+  D- / PB- dans `services/reference.py`). Bascule rapide sur un BROUILLON via
+  `PATCH /api/devis/{id}/document-type` + selecteur dans le simulateur.
+- Une proposition budgetaire est NON CONTRACTUELLE : pas de signature, pas d'IBAN, pas
+  d'echeancier, mentions adaptees. Conteneur `params_doc` (JSON) sur le devis pour les
+  parametres de document. Blocs Shopify enrichis (socle, forfait references produits,
+  abonnement a charge du client, frais externes, maintenance courte).
+- Migration `c3d4e5f6a7b8` (document_type, params_doc).
+
+Contenu editable des packs de maintenance :
+- Colonne `Option.contenu_pack` (override JSON) avec FALLBACK sur `packs_maintenance.py`.
+  `contenu_cumule(code)` resout l'heritage en appliquant les overrides maillon par maillon.
+- API `GET/PATCH/DELETE /api/options/{id}/contenu-pack` + editeur `PackContenuEditor.tsx`
+  dans /catalogue/option (parties heritees en lecture seule + prestations propres editables).
+- Migration `d4e5f6a7b8c9` (contenu_pack).
+
+Options incluses par offre :
+- API `PUT /api/offres/{id}/inclusions` (remplacement complet, garde-fou ids valides).
+- Editeur `OffreInclusionsEditor.tsx` (cases a cocher groupees par categorie) dans /catalogue/offre.
+
+N'impacte que le catalogue et les FUTURS documents ; les devis emis gardent prix et
+inclusions figes.
+
+### Maintenance Shopify — prix et textes (fait 2026-06-02, `d37e531`) TERMINEE
+Prix mensuels HT EXACTS (35 / 49 / 79 / 129 EUR) obtenus en n'ajustant QUE les heures :
+- Migration `e5f6a7b8c9d0` : heures en `Numeric(8,4)` (4 decimales). Prix/heure (27) et
+  marge (0,20) INCHANGES. Heures Shopify ajustees en base (catalogue editable).
+
+Descriptif Shopify court + detaille, editable par niveau :
+- `texte_court` (devis simple / proposition budgetaire) et `texte_detaille`
+  (contrat / annexe) ajoutes aux packs Shopify dans `packs_maintenance.py` ;
+  `contenu_cumule` les expose (override base possible).
+- Generation : `_add_maintenance_shopify` affiche le texte court + un temps inclus derive
+  des heures du pack ; annexe `_add_detail_maintenance_shopify` (texte detaille) affichee
+  pour un devis CONTRACTUEL (pas en proposition budgetaire).
+- Editeur /catalogue/option adapte par FAMILLE (Shopify = textes ; Webflow = prestations
+  cumulees, inchange). Aucune mention "hebergement inclus" cote Shopify ; Webflow non impacte.
+
+### Simulateur — panneau resultats collant (fait 2026-06-02, `608f4ba`) TERMINEE
+Le panneau de droite (Resultats + Enregistrer) etait sticky ; un recap plus haut que
+l'ecran faisait passer le bloc Enregistrer hors d'atteinte au scroll. Desormais plafonne
+a la hauteur de la fenetre avec defilement interne
+(`lg:max-h-[calc(100vh-2rem)] overflow-y-auto`). Mobile inchange.
+NB : le simulateur a un Client Component `SimulateurClient.tsx` (le pattern par defaut du
+reste de l'app demeure Server Components — cf. note 2026-05-31).
+
 ### Phase Shopify — abonnement a la charge du client (devis 2026-06-01, factures 2026-06-02) TERMINEE
 Decision metier (Bruno) : dans un contrat Shopify, l'abonnement Shopify (plateforme,
 hebergement, infra, paiement) est souscrit et regle DIRECTEMENT par le client, EN SON
@@ -521,8 +577,11 @@ python scripts/import_donnees.py
 ## Fichiers de memoire
 
 Les memoires persistantes sont dans :
-`/home/ullop/.claude-max/projects/-home-ullop--openclaw-workspace-projects-tarificateur/memory/`
+`/home/ullop/.claude-max/projects/-home-ullop--openclaw-workspace-projects-fluxdevis/memory/`
 
+- `MEMORY.md` — Index des memoires (charge a chaque session)
 - `user_identity.md` — Identite de Bruno
 - `feedback_autonomy.md` — Preference d'autonomie
 - `project_fluxdevis.md` — Etat du projet
+- `project_env_runtime.md` — Env runtime (PostgreSQL systeme, venv/uvicorn:8000, Alembic)
+- `project_js_client_reseau.md` — Client Components OK via allowedDevOrigins

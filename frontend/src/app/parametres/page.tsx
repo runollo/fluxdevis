@@ -9,6 +9,7 @@ interface Parametres {
   smtp_password_defini: boolean; smtp_actif: boolean; envoi_client_actif: boolean;
   email_signature: string; email_objet_devis: string; email_corps_devis: string;
   email_objet_facture: string; email_corps_facture: string;
+  email_objet_relance: string; email_corps_relance: string;
 }
 
 export default async function ParametresPage(
@@ -167,6 +168,17 @@ export default async function ParametresPage(
               className="w-full border rounded px-3 py-2 text-sm mb-2" />
             <label className="block text-xs text-gray-400 mb-0.5">Corps</label>
             <textarea name="email_corps_facture" rows={5} defaultValue={p.email_corps_facture}
+              className="w-full border rounded px-3 py-2 text-sm font-mono" />
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs font-semibold text-gray-600 mb-2">Email de relance (rappel de paiement)</p>
+            <p className="text-[11px] text-gray-400 mb-2">Variable supplementaire : <code>{"{jours_retard}"}</code>.</p>
+            <label className="block text-xs text-gray-400 mb-0.5">Objet</label>
+            <input name="email_objet_relance" defaultValue={p.email_objet_relance}
+              className="w-full border rounded px-3 py-2 text-sm mb-2" />
+            <label className="block text-xs text-gray-400 mb-0.5">Corps</label>
+            <textarea name="email_corps_relance" rows={5} defaultValue={p.email_corps_relance}
               className="w-full border rounded px-3 py-2 text-sm font-mono" />
           </div>
 

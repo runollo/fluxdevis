@@ -28,6 +28,16 @@ DEFAUT_CORPS_FACTURE = (
     "Nous vous remercions de votre confiance."
 )
 DEFAUT_SIGNATURE = "Cordialement,\n{marque}"
+DEFAUT_OBJET_RELANCE = "Rappel - facture {numero} en attente de reglement - {marque}"
+DEFAUT_CORPS_RELANCE = (
+    "Bonjour {interlocuteur},\n\n"
+    "Sauf erreur de notre part, votre facture {numero} du {date}, d'un montant de "
+    "{montant_ttc} EUR TTC (echeance le {date_echeance}), reste a ce jour impayee "
+    "(retard de {jours_retard} jours).\n\n"
+    "Vous en trouverez une copie ci-jointe. Nous vous remercions de bien vouloir "
+    "proceder a son reglement dans les meilleurs delais.\n\n"
+    "Si ce reglement a deja ete effectue, merci de ne pas tenir compte de ce rappel."
+)
 
 
 def _appliquer(modele: str, variables: dict) -> str:
@@ -79,6 +89,29 @@ def construire_email_devis(devis, societe, params) -> tuple[str, str]:
     )
     html = _assembler(
         (params and params.email_corps_devis) or DEFAUT_CORPS_DEVIS,
+        (params and params.email_signature) or DEFAUT_SIGNATURE,
+        variables,
+    )
+    return objet, html
+
+
+def construire_email_relance(facture, devis, societe, params, jours_retard=0) -> tuple[str, str]:
+    """Retourne (objet, html) d'un email de relance (rappel de paiement)."""
+    marque = (societe.marque or societe.nom) if societe else "FluXweb"
+    interlocuteur = devis.client_interlocuteur if devis else None
+    client = devis.client_raison_sociale if devis else ""
+    variables = _variables_communes(client, interlocuteur, facture.total_ttc, marque)
+    variables.update({
+        "numero": facture.numero,
+        "date": facture.date_emission.strftime("%d/%m/%Y") if facture.date_emission else "",
+        "date_echeance": facture.date_echeance.strftime("%d/%m/%Y") if facture.date_echeance else "",
+        "jours_retard": str(jours_retard if jours_retard and jours_retard > 0 else 0),
+    })
+    objet = _appliquer(
+        (params and params.email_objet_relance) or DEFAUT_OBJET_RELANCE, variables
+    )
+    html = _assembler(
+        (params and params.email_corps_relance) or DEFAUT_CORPS_RELANCE,
         (params and params.email_signature) or DEFAUT_SIGNATURE,
         variables,
     )

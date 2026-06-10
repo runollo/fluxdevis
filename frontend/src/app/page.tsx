@@ -18,7 +18,7 @@ interface FactureRecente {
 interface Stats {
   offres_actives: number; options_actives: number; clients: number;
   devis_total: number; devis_acceptes: number;
-  factures_total: number; factures_impayees: number;
+  factures_total: number; factures_impayees: number; factures_a_relancer: number;
   montant_devis_ttc: string; montant_factures_ttc: string;
   derniers_devis: DevisRecent[]; dernieres_factures: FactureRecente[];
 }
@@ -55,6 +55,19 @@ export default async function Dashboard() {
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           Impossible de charger les statistiques (backend injoignable).
         </div>
+      )}
+
+      {s && s.factures_a_relancer > 0 && (
+        <Link href="/factures?a_relancer=1"
+          className="mb-4 flex items-center justify-between rounded-lg border border-red-300 bg-red-50 p-4 hover:bg-red-100 transition-colors">
+          <div>
+            <p className="text-sm font-semibold text-red-800">
+              {s.factures_a_relancer} facture{s.factures_a_relancer > 1 ? "s" : ""} a relancer
+            </p>
+            <p className="text-xs text-red-600">Echeance depassee ou envoyee il y a plus de 30 jours, non payee.</p>
+          </div>
+          <span className="text-red-700 text-sm font-medium">Voir &rarr;</span>
+        </Link>
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">

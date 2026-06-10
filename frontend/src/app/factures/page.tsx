@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { restaurerFacture, envoyerFacture, emettreFacture } from "@/lib/actions";
+import { restaurerFacture, envoyerFacture, emettreFacture, marquerPayee, marquerImpayee, relancerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,7 @@ interface Facture {
   devis_id?: number | null; client?: string | null;
   projet_ref?: string | null; projet_nom?: string | null;
   nb_envois?: number; dernier_envoi?: string | null; dernier_envoi_mode?: string | null;
+  a_relancer?: boolean; jours_retard?: number | null;
 }
 
 // Date+heure d'un envoi, en heure de Paris (independant du fuseau serveur).
@@ -79,9 +80,10 @@ function ActionsFacture({ f }: { f: Facture }) {
 const PAR_PAGE = 25;
 
 export default async function FacturesPage(
-  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string; envoye?: string; client?: string; projet?: string; statut?: string; type?: string }> }
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string; envoye?: string; client?: string; projet?: string; statut?: string; type?: string; a_relancer?: string }> }
 ) {
   const params = await searchParams;
+  const aRelancer = params.a_relancer === "1";
   const corbeille = params.archives === "1";
   const q = (params.q || "").trim();
   const clientId = (params.client || "").trim();
@@ -97,6 +99,7 @@ export default async function FacturesPage(
   if (projet) qs.set("devis_id", projet);
   if (statut) qs.set("statut", statut);
   if (type) qs.set("type", type);
+  if (aRelancer) qs.set("a_relancer", "true");
   qs.set("skip", String(skip));
   qs.set("limit", String(PAR_PAGE));
 
@@ -141,7 +144,7 @@ export default async function FacturesPage(
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-          {corbeille ? "Corbeille — factures" : "Factures"} ({factures.length})
+          {corbeille ? "Corbeille — factures" : aRelancer ? "Factures a relancer" : "Factures"} ({factures.length})
         </h1>
         <div className="flex gap-2">
           {corbeille ? (
@@ -150,6 +153,15 @@ export default async function FacturesPage(
             </Link>
           ) : (
             <>
+              {aRelancer ? (
+                <Link href="/factures" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
+                  Toutes les factures
+                </Link>
+              ) : (
+                <Link href="/factures?a_relancer=1" className="px-4 py-2.5 border border-amber-300 bg-amber-50 text-amber-800 rounded text-sm font-medium text-center">
+                  A relancer
+                </Link>
+              )}
               <a href={`/api/factures/export.xlsx${q ? `?q=${encodeURIComponent(q)}` : ""}`} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
                 Export Excel
               </a>
@@ -178,6 +190,11 @@ export default async function FacturesPage(
       {params.envoye === "moi" && (
         <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
           Facture envoyee sur votre adresse (a transferer).
+        </div>
+      )}
+      {params.envoye === "relance" && (
+        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
+          Relance envoyee au client.
         </div>
       )}
 
@@ -253,9 +270,14 @@ export default async function FacturesPage(
                     )}
                     <p className="text-xs text-gray-500">{TYPE_LABELS[f.type] || f.type}</p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[f.statut] || "bg-gray-100 text-gray-700"}`}>
-                    {f.statut}
-                  </span>
+                  <div className="text-right">
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[f.statut] || "bg-gray-100 text-gray-700"}`}>
+                      {f.statut}
+                    </span>
+                    {f.a_relancer && (
+                      <p className="mt-1"><span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">A relancer{f.jours_retard ? ` (${f.jours_retard}j)` : ""}</span></p>
+                    )}
+                  </div>
                 </div>
                 {f.client && <p className="text-sm font-medium text-gray-800">{f.client}</p>}
                 {f.projet_ref && (
@@ -319,6 +341,37 @@ export default async function FacturesPage(
                         </div>
                       </details>
                     </form>
+                    {f.a_relancer && (
+                      <form action={relancerFacture}>
+                        <input type="hidden" name="facture_id" value={f.id} />
+                        <input type="hidden" name="retour" value={aRelancer ? "/factures?a_relancer=1" : "/factures"} />
+                        <details>
+                          <summary className="cursor-pointer block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium list-none">
+                            Relancer le client&hellip;
+                          </summary>
+                          <div className="mt-1 flex gap-2">
+                            {envoiClientActif && (
+                              <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-red-600 text-white rounded text-sm font-medium">Au client</button>
+                            )}
+                            <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">A moi</button>
+                          </div>
+                        </details>
+                      </form>
+                    )}
+                    {(f.statut === "emise" || f.statut === "en_retard") && (
+                      <form action={marquerPayee}>
+                        <input type="hidden" name="facture_id" value={f.id} />
+                        <input type="hidden" name="retour" value={aRelancer ? "/factures?a_relancer=1" : "/factures"} />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-green-600 text-green-700 rounded text-sm font-medium">Marquer payee</button>
+                      </form>
+                    )}
+                    {f.statut === "payee" && (
+                      <form action={marquerImpayee}>
+                        <input type="hidden" name="facture_id" value={f.id} />
+                        <input type="hidden" name="retour" value="/factures" />
+                        <button type="submit" className="block w-full text-center px-3 py-2 border border-gray-300 text-gray-500 rounded text-sm font-medium">Marquer impayee</button>
+                      </form>
+                    )}
                     {f.statut === "brouillon" && (
                       <Link href={`/factures/confirmer?id=${f.id}&action=archiver`} className="block w-full text-center px-3 py-2 border border-red-300 text-red-600 rounded text-sm font-medium">
                         Supprimer (corbeille)
@@ -374,8 +427,40 @@ export default async function FacturesPage(
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[f.statut] || "bg-gray-100 text-gray-700"}`}>
                         {f.statut}
                       </span>
+                      {f.a_relancer && (
+                        <p className="mt-1"><span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">A relancer{f.jours_retard ? ` (${f.jours_retard}j)` : ""}</span></p>
+                      )}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td className="px-4 py-3 text-right whitespace-nowrap align-top">
+                      {!corbeille && (f.statut === "emise" || f.statut === "en_retard") && (
+                        <form action={marquerPayee} className="inline">
+                          <input type="hidden" name="facture_id" value={f.id} />
+                          <input type="hidden" name="retour" value={aRelancer ? "/factures?a_relancer=1" : "/factures"} />
+                          <button type="submit" className="mr-3 text-green-700 hover:underline font-medium">Payee</button>
+                        </form>
+                      )}
+                      {!corbeille && f.statut === "payee" && (
+                        <form action={marquerImpayee} className="inline">
+                          <input type="hidden" name="facture_id" value={f.id} />
+                          <input type="hidden" name="retour" value="/factures" />
+                          <button type="submit" className="mr-3 text-gray-500 hover:underline text-xs">impayee</button>
+                        </form>
+                      )}
+                      {!corbeille && f.a_relancer && (
+                        <form action={relancerFacture} className="inline">
+                          <input type="hidden" name="facture_id" value={f.id} />
+                          <input type="hidden" name="retour" value={aRelancer ? "/factures?a_relancer=1" : "/factures"} />
+                          <details className="inline-block align-middle mr-3">
+                            <summary className="cursor-pointer text-red-600 hover:underline font-medium list-none">Relancer</summary>
+                            <span className="ml-2 inline-flex gap-2">
+                              {envoiClientActif && (
+                                <button type="submit" name="mode" value="client" className="bg-red-600 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                              )}
+                              <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                            </span>
+                          </details>
+                        </form>
+                      )}
                       {corbeille ? (
                         <>
                           <form action={restaurerFacture} className="inline">

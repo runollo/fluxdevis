@@ -14,6 +14,7 @@ from app.models.option import Option
 from app.models.client import Client
 from app.models.devis import Devis, StatutDevis
 from app.models.facture import Facture, StatutFacture
+from app.services import relances as relances_svc
 
 router = APIRouter()
 
@@ -44,6 +45,7 @@ class DashboardStats(BaseModel):
     devis_acceptes: int
     factures_total: int
     factures_impayees: int
+    factures_a_relancer: int
     montant_devis_ttc: Decimal
     montant_factures_ttc: Decimal
     derniers_devis: list[DevisRecent]
@@ -80,6 +82,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         db, Facture, Facture.archived_at.is_(None),
         Facture.statut.in_([StatutFacture.EMISE, StatutFacture.EN_RETARD]),
     )
+    factures_a_relancer = len(await relances_svc.factures_a_relancer(db))
 
     montant_devis = await _somme(db, Devis.total_ttc, Devis.archived_at.is_(None))
     montant_factures = await _somme(db, Facture.total_ttc, Facture.archived_at.is_(None))
@@ -102,6 +105,7 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         devis_acceptes=devis_acceptes,
         factures_total=factures_total,
         factures_impayees=factures_impayees,
+        factures_a_relancer=factures_a_relancer,
         montant_devis_ttc=montant_devis,
         montant_factures_ttc=montant_factures,
         derniers_devis=[

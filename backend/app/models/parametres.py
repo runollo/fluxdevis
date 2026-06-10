@@ -42,3 +42,6 @@ class Parametres(Base, TimestampMixin):
     email_corps_devis: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_objet_facture: Mapped[str | None] = mapped_column(Text, nullable=True)
     email_corps_facture: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Modele de relance (rappel de paiement). Variable supplementaire {jours_retard}.
+    email_objet_relance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_corps_relance: Mapped[str | None] = mapped_column(Text, nullable=True)

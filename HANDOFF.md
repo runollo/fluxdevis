@@ -515,6 +515,37 @@ actuel, vs reecriture ReportLab). Bruno a accepte l'install systeme.
 Verifie : tsc OK, docx toujours dispo, 503 propre sans LibreOffice. (Conversion PDF reelle
 a tester apres install.)
 
+### Suivi des envois, paiements et relances de factures (fait 2026-06-10) TERMINEE
+Deux phases livrees.
+PHASE 1 - Historique d'envoi + alerte au renvoi :
+- modele `FactureEnvoi` (table `facture_envois` : date_envoi, mode, destinataire ;
+  migration `e1f2a3b4c5d6`). Un enregistrement cree a chaque envoi/relance reussi.
+- `FactureListItem` + factures du detail devis exposent `nb_envois`, `dernier_envoi`,
+  `dernier_envoi_mode`. Frontend : dans le panneau "Envoyer...", si deja envoyee ->
+  marqueur ambre "Envoyer *" + alerte "Deja envoyee le JJ/MM/AAAA a HHhMM (au client /
+  a vous) — N envois. Renvoyer ?" (heure Europe/Paris).
+PHASE 2 - Suivi paiement + relances (manuel, choix Bruno) :
+- service `app/services/relances.py` : `est_a_relancer(f)` = non payee/brouillon/annulee/
+  archivee + (echeance depassee OU dernier envoi > DELAI_RELANCE_JOURS=30j) ; `jours_retard`,
+  `factures_a_relancer(db)`.
+- modeles de relance editables : colonnes `email_objet_relance`/`email_corps_relance` sur
+  Parametres (migration `f2a3b4c5d6e7`) ; `construire_email_relance` (+ variable
+  `{jours_retard}`) dans email_modeles ; exposes/editables dans la page Parametres.
+- endpoints factures : `POST /{id}/payer` (statut PAYEE + date_paiement), `POST /{id}/impayee`
+  (retour EMISE), `POST /{id}/relancer` ({mode}, template relance, PJ PDF, respecte le
+  garde-fou envoi_client_actif, trace un FactureEnvoi). `FactureListItem` porte `a_relancer`
+  + `jours_retard` ; param `a_relancer=true` = worklist (sans pagination). Dashboard :
+  compteur `factures_a_relancer`.
+- frontend : badge rouge "A relancer (Nj)" sur les lignes ; boutons "Marquer payee" /
+  "Marquer impayee" ; bouton "Relancer" (meme pattern <details> + choix client/a moi +
+  garde-fou) ; lien rapide "A relancer" sur /factures (?a_relancer=1) ; widget rouge
+  "N factures a relancer" sur le Dashboard ; actions `marquerPayee`/`marquerImpayee`/
+  `relancerFacture`. Bandeau "Relance envoyee" (?envoye=relance).
+Verifie end-to-end (a_relancer calcule, payer/impayee maj dashboard, rendu mail relance
+avec jours de retard, badges/boutons/widget rendus, tsc OK). Envoi reel non declenche.
+A FAIRE EVENTUELLEMENT : meme suivi cote DEVIS (envoye/relance) ; relances automatiques
+(cron) ; historique d'envoi detaille (liste de tous les envois) sur une fiche facture.
+
 ### Garde-fou : activer/desactiver l'envoi direct au client (fait 2026-06-10) TERMINEE
 Demande Bruno : pouvoir desactiver l'envoi DIRECT au client (le temps de prendre l'outil
 en main), l'envoi "a moi" restant toujours possible.

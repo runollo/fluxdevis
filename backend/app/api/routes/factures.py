@@ -17,8 +17,9 @@ from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
 from app.services.parametres import smtp_config, charger as charger_parametres
-from app.services.email_modeles import construire_email_facture
+from app.services.email_modeles import construire_email_facture, construire_email_relance
 from app.services.pdf import docx_vers_pdf, PdfError
+from app.services import relances as relances_svc
 from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
@@ -58,6 +59,9 @@ class FactureListItem(BaseModel):
     nb_envois: int = 0
     dernier_envoi: str | None = None  # ISO datetime du dernier envoi
     dernier_envoi_mode: str | None = None  # client / expediteur
+    # Suivi de paiement / relance.
+    a_relancer: bool = False
+    jours_retard: int | None = None
 
 
 def _infos_envoi(facture) -> dict:
@@ -81,6 +85,7 @@ async def list_factures(
     q: str | None = None,
     client_id: int | None = None,
     devis_id: int | None = None,
+    a_relancer: bool = False,
     skip: int = 0,
     limit: int = 25,
     db: AsyncSession = Depends(get_db),
@@ -93,30 +98,37 @@ async def list_factures(
     - devis_id : ne garde que les factures d'un projet (devis) donne.
     - skip / limit : pagination par decalage.
     """
-    query = (
-        select(Facture)
-        .options(selectinload(Facture.devis), selectinload(Facture.envois))
-        .order_by(Facture.date_emission.desc(), Facture.id.desc())
-    )
-    if archives:
-        query = query.where(Facture.archived_at.is_not(None))
+    if a_relancer:
+        # Worklist focalisee : toutes les factures a relancer (pas de pagination).
+        factures = await relances_svc.factures_a_relancer(db)
+        if client_id:
+            factures = [f for f in factures if f.devis and f.devis.client_id == client_id]
     else:
-        query = query.where(Facture.archived_at.is_(None))
-    if statut:
-        query = query.where(Facture.statut == statut)
-    if type:
-        query = query.where(Facture.type == type)
-    if devis_id:
-        query = query.where(Facture.devis_id == devis_id)
-    if client_id:
-        query = query.join(Devis, Facture.devis_id == Devis.id).where(
-            Devis.client_id == client_id
+        query = (
+            select(Facture)
+            .options(selectinload(Facture.devis), selectinload(Facture.envois))
+            .order_by(Facture.date_emission.desc(), Facture.id.desc())
         )
-    if q:
-        motif = f"%{q.strip()}%"
-        query = query.where(Facture.numero.ilike(motif) | Facture.objet.ilike(motif))
-    query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
-    factures = (await db.execute(query)).scalars().all()
+        if archives:
+            query = query.where(Facture.archived_at.is_not(None))
+        else:
+            query = query.where(Facture.archived_at.is_(None))
+        if statut:
+            query = query.where(Facture.statut == statut)
+        if type:
+            query = query.where(Facture.type == type)
+        if devis_id:
+            query = query.where(Facture.devis_id == devis_id)
+        if client_id:
+            query = query.join(Devis, Facture.devis_id == Devis.id).where(
+                Devis.client_id == client_id
+            )
+        if q:
+            motif = f"%{q.strip()}%"
+            query = query.where(Facture.numero.ilike(motif) | Facture.objet.ilike(motif))
+        query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
+        factures = (await db.execute(query)).scalars().all()
+
     return [
         FactureListItem(
             id=f.id, numero=f.numero, type=f.type, statut=f.statut,
@@ -125,6 +137,8 @@ async def list_factures(
             client=f.devis.client_raison_sociale if f.devis else None,
             projet_ref=f.devis.reference if f.devis else None,
             projet_nom=f.devis.offre_nom if f.devis else None,
+            a_relancer=relances_svc.est_a_relancer(f),
+            jours_retard=relances_svc.jours_retard(f),
             **_infos_envoi(f),
         )
         for f in factures
@@ -349,6 +363,111 @@ async def envoyer_facture_email(
     await db.commit()
 
     return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire, "mode": mode}
+
+
+class PaiementRequest(BaseModel):
+    date_paiement: date | None = None
+    moyen_paiement: str | None = None
+
+
+@router.post("/{facture_id}/payer", response_model=FactureSummary)
+async def marquer_payee(
+    facture_id: int, data: PaiementRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Marque une facture comme PAYEE (date de paiement = aujourd'hui par defaut)."""
+    f = await db.get(Facture, facture_id)
+    if not f:
+        raise HTTPException(404, "Facture non trouvee")
+    if f.statut not in (StatutFacture.EMISE, StatutFacture.EN_RETARD, StatutFacture.PAYEE):
+        raise HTTPException(400, "Seule une facture emise peut etre marquee payee.")
+    ancien = f.statut.value
+    f.statut = StatutFacture.PAYEE
+    f.date_paiement = (data.date_paiement if (data and data.date_paiement) else date.today())
+    if data and data.moyen_paiement:
+        f.moyen_paiement = data.moyen_paiement
+    journal_svc.enregistrer(db, "facture", f.id, "statut", ancien, "payee", motif="Marquee payee")
+    await db.commit()
+    await db.refresh(f)
+    return f
+
+
+@router.post("/{facture_id}/impayee", response_model=FactureSummary)
+async def marquer_impayee(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Repasse une facture payee en EMISE (annule le marquage de paiement)."""
+    f = await db.get(Facture, facture_id)
+    if not f:
+        raise HTTPException(404, "Facture non trouvee")
+    if f.statut != StatutFacture.PAYEE:
+        raise HTTPException(400, "Seule une facture payee peut repasser impayee.")
+    f.statut = StatutFacture.EMISE
+    f.date_paiement = None
+    journal_svc.enregistrer(db, "facture", f.id, "statut", "payee", "emise", motif="Repassee impayee")
+    await db.commit()
+    await db.refresh(f)
+    return f
+
+
+@router.post("/{facture_id}/relancer")
+async def relancer_facture(
+    facture_id: int, data: EnvoiEmailRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Envoie un email de RELANCE (rappel de paiement) avec la facture en PJ PDF.
+
+    mode=client (defaut) ou expediteur (a soi-meme). Respecte le garde-fou
+    envoi_client_actif. Seule une facture emise/impayee peut etre relancee.
+    """
+    if not await email_actif(db):
+        raise HTTPException(400, "Envoi email non configure : renseignez les parametres SMTP.")
+    facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
+    if facture.statut not in (StatutFacture.EMISE, StatutFacture.EN_RETARD):
+        raise HTTPException(400, "Seule une facture emise et impayee peut etre relancee.")
+    mode = (data.mode if data else "client")
+    params = await charger_parametres(db)
+
+    if mode == "expediteur":
+        destinataire = await adresse_expediteur(db, societe)
+        if not destinataire:
+            raise HTTPException(400, "Adresse d'envoi introuvable : configurez le SMTP.")
+    else:
+        if not params.envoi_client_actif:
+            raise HTTPException(
+                403,
+                "Envoi direct au client desactive : activez-le dans Parametres "
+                "(ou relancez via \"A moi\" pour transferer vous-meme).",
+            )
+        destinataire = devis.client_email if devis else None
+        if not destinataire:
+            raise HTTPException(400, "Email client absent du devis.")
+
+    cfg = await smtp_config(db)
+    expediteur = cfg.sender
+    if not expediteur and societe and societe.email:
+        expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
+
+    jr = relances_svc.jours_retard(facture) or 0
+    sujet, html = construire_email_relance(facture, devis, societe, params, jr)
+    if mode == "expediteur":
+        sujet = f"[A transferer] {sujet}"
+    try:
+        pdf = await docx_vers_pdf(buf.getvalue())
+    except PdfError as e:
+        raise HTTPException(503, str(e))
+    pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
+    email = Email(
+        destinataire=destinataire, sujet=sujet, html=html,
+        pieces_jointes=[PieceJointe(pdf_name, pdf, "application/pdf")],
+        reply_to=(societe.email if societe else None),
+    )
+    try:
+        await envoyer_email(db, email, expediteur)
+    except EmailError as e:
+        raise HTTPException(400, str(e))
+
+    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire))
+    await db.commit()
+    return {"ok": True, "destinataire": destinataire, "mode": mode, "relance": True}
 
 
 @router.post("/{facture_id}/emettre", response_model=FactureSummary)

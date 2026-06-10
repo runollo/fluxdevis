@@ -420,6 +420,8 @@ export async function saveModelesEmail(formData: FormData) {
     email_corps_devis: (formData.get("email_corps_devis") as string) ?? "",
     email_objet_facture: (formData.get("email_objet_facture") as string) ?? "",
     email_corps_facture: (formData.get("email_corps_facture") as string) ?? "",
+    email_objet_relance: (formData.get("email_objet_relance") as string) ?? "",
+    email_corps_relance: (formData.get("email_corps_relance") as string) ?? "",
   };
   try {
     await serverPatch(`/parametres/`, body);
@@ -718,6 +720,43 @@ export async function restaurerFacture(formData: FormData) {
 // FONCTIONNALITE PREVUE, NON ACTIVEE (cf. HANDOFF, section envoi email).
 // Tant que RESEND_API_KEY n'est pas configuree cote backend, l'appel renvoie une
 // erreur "non configure" affichee via suppr_msg ; aucun email ne part.
+export async function marquerPayee(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  try {
+    await serverPost(`/factures/${id}/payer`, {});
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(retour);
+}
+
+export async function marquerImpayee(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  if (!id) redirect("/factures");
+  try {
+    await serverPost(`/factures/${id}/impayee`, {});
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(retour);
+}
+
+export async function relancerFacture(formData: FormData) {
+  const id = formData.get("facture_id") as string;
+  const retour = (formData.get("retour") as string) || "/factures";
+  const mode = (formData.get("mode") as string) || "client";
+  if (!id) redirect("/factures");
+  try {
+    await serverPost(`/factures/${id}/relancer`, { mode });
+  } catch (e) {
+    redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(ajouterParam(retour, "envoye", mode === "expediteur" ? "moi" : "relance"));
+}
+
 export async function envoyerFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";

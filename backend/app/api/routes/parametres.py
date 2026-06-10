@@ -38,6 +38,8 @@ class ParametresOut(BaseModel):
     email_corps_devis: str
     email_objet_facture: str
     email_corps_facture: str
+    email_objet_relance: str
+    email_corps_relance: str
 
 
 async def _serialiser(db: AsyncSession) -> ParametresOut:
@@ -54,6 +56,8 @@ async def _serialiser(db: AsyncSession) -> ParametresOut:
         email_corps_devis=p.email_corps_devis or modeles.DEFAUT_CORPS_DEVIS,
         email_objet_facture=p.email_objet_facture or modeles.DEFAUT_OBJET_FACTURE,
         email_corps_facture=p.email_corps_facture or modeles.DEFAUT_CORPS_FACTURE,
+        email_objet_relance=p.email_objet_relance or modeles.DEFAUT_OBJET_RELANCE,
+        email_corps_relance=p.email_corps_relance or modeles.DEFAUT_CORPS_RELANCE,
     )
 
 
@@ -76,6 +80,8 @@ class ParametresUpdate(BaseModel):
     email_corps_devis: str | None = None
     email_objet_facture: str | None = None
     email_corps_facture: str | None = None
+    email_objet_relance: str | None = None
+    email_corps_relance: str | None = None
 
 
 def _norm(v):
@@ -110,6 +116,7 @@ async def update_parametres(data: ParametresUpdate, db: AsyncSession = Depends(g
         "smtp_host", "smtp_user", "smtp_from", "email_signature",
         "email_objet_devis", "email_corps_devis",
         "email_objet_facture", "email_corps_facture",
+        "email_objet_relance", "email_corps_relance",
     ):
         if champ in fournis:
             setattr(p, champ, _norm(fournis[champ]))

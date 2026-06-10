@@ -79,8 +79,14 @@ const TYPE_FACTURE: Record<string, string> = {
   acompte: "Acompte", solde: "Solde", maintenance: "Maintenance",
 };
 const CATEGORIES_DOC = [
-  { value: "devis_signe", label: "Devis signe" },
-  { value: "contrat_signe", label: "Contrat signe" },
+  { value: "devis_envoye", label: "Devis envoyé" },
+  { value: "devis_signe", label: "Devis signé" },
+  { value: "proposition_envoyee", label: "Proposition budgétaire envoyée" },
+  { value: "facture_envoyee", label: "Facture envoyée" },
+  { value: "contrat_envoye", label: "Contrat envoyé" },
+  { value: "contrat_signe", label: "Contrat signé" },
+  { value: "avenant_envoye", label: "Avenant au contrat envoyé" },
+  { value: "avenant_signe", label: "Avenant signé" },
   { value: "bon_commande", label: "Bon de commande" },
   { value: "annexe", label: "Annexe" },
   { value: "autre", label: "Autre" },

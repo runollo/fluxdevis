@@ -14,10 +14,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin, SoftDeleteMixin
 
-# Categories metier d'une piece jointe (libelles applicatifs, source unique).
+# Categories metier d'une piece jointe (valeurs sans accents, source de verite ;
+# les libelles accentues sont cote frontend, cf. CATEGORIES_DOC dans la page detail).
+# Couvre les documents ENVOYES par FluXweb et ceux SIGNES/retournes par le client.
 CATEGORIES_DOCUMENT = (
+    "devis_envoye",
     "devis_signe",
+    "proposition_envoyee",
+    "facture_envoyee",
+    "contrat_envoye",
     "contrat_signe",
+    "avenant_envoye",
+    "avenant_signe",
     "bon_commande",
     "annexe",
     "autre",

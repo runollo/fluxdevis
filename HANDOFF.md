@@ -450,9 +450,13 @@ Choix de conception (valides avec Bruno) :
 Backend :
 - modele `app/models/devis_document.py` : table `devis_documents` (devis_id FK CASCADE,
   categorie, tag, commentaire, nom_fichier, mime_type, taille, contenu=LargeBinary,
-  TimestampMixin + SoftDeleteMixin). Categories : devis_signe / contrat_signe /
-  bon_commande / annexe / autre (constante `CATEGORIES_DOCUMENT`). Enregistre dans
-  `models/__init__.py`.
+  TimestampMixin + SoftDeleteMixin). Categories (constante `CATEGORIES_DOCUMENT`,
+  valeurs sans accents = source de verite ; libelles accentues cote frontend dans
+  `CATEGORIES_DOC`) : documents ENVOYES (devis_envoye, proposition_envoyee,
+  facture_envoyee, contrat_envoye, avenant_envoye) ET SIGNES/retournes (devis_signe,
+  contrat_signe, avenant_signe, bon_commande) + annexe / autre. Pour en ajouter :
+  completer les DEUX listes (backend tuple + frontend array), pas de migration (colonne
+  String, validee au niveau applicatif). Enregistre dans `models/__init__.py`.
 - `Devis` : 2 champs `reference_externe` + `date_signature` (tracent l'original externe
   quand le devis applicatif est une reconstitution) + relation `documents`.
 - migration `f6a7b8c9d0e1` (table + 2 colonnes). Appliquee.

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, definirDocumentOfficiel } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -29,11 +29,17 @@ interface VersionInfo {
   id: number; reference: string; version: number;
   statut: string; active: boolean; date_emission: string; total_ttc: string;
 }
+interface DocumentArchive {
+  id: number; categorie: string; tag: string | null; commentaire: string | null;
+  nom_fichier: string; mime_type: string; taille: number; date_ajout: string | null;
+}
 interface DevisDetail {
   id: number; reference: string; statut: string;
   document_type: string;
   version: number; version_active: boolean; versions: VersionInfo[];
   date_emission: string; date_validite: string; date_mise_en_ligne: string | null;
+  reference_externe: string | null; date_signature: string | null;
+  documents: DocumentArchive[];
   date_debut_echeancier: string | null; intervalle_echeance_jours: number;
   maintenance: Maintenance;
   client_raison_sociale: string; client_adresse: string | null;
@@ -71,6 +77,22 @@ const STATUT_FACTURE: Record<string, string> = {
 const TYPE_FACTURE: Record<string, string> = {
   acompte: "Acompte", solde: "Solde", maintenance: "Maintenance",
 };
+const CATEGORIES_DOC = [
+  { value: "devis_signe", label: "Devis signe" },
+  { value: "contrat_signe", label: "Contrat signe" },
+  { value: "bon_commande", label: "Bon de commande" },
+  { value: "annexe", label: "Annexe" },
+  { value: "autre", label: "Autre" },
+];
+const CATEGORIE_DOC_LABEL: Record<string, string> = Object.fromEntries(
+  CATEGORIES_DOC.map((c) => [c.value, c.label]),
+);
+
+function tailleLisible(o: number): string {
+  if (o < 1024) return `${o} o`;
+  if (o < 1024 * 1024) return `${(o / 1024).toFixed(0)} Ko`;
+  return `${(o / (1024 * 1024)).toFixed(1)} Mo`;
+}
 
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   if (!value) return null;
@@ -96,7 +118,7 @@ function libelleChamp(c: string): string {
   return map[c] || c;
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string; maj?: string }> }) {
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string; maj?: string; doc_msg?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
@@ -506,6 +528,128 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             ))}
           </ul>
         )}
+      </div>
+
+      {/* Documents archives (pieces jointes : devis/contrat signe, scans) */}
+      <div id="documents" className="bg-white border rounded-lg p-4 mt-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">
+          Documents archives ({d.documents.length})
+        </h2>
+
+        {params.doc_msg && (
+          <div className="mb-3 rounded bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">
+            {params.doc_msg}
+          </div>
+        )}
+
+        {/* Document officiel externe (cas d'un devis reconstitue) */}
+        {(d.reference_externe || d.date_signature) && (
+          <div className="mb-3 rounded bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2">
+            Le document officiel qui fait foi est une piece jointe externe
+            {d.reference_externe ? ` (ref. ${d.reference_externe})` : ""}
+            {d.date_signature ? `, signe le ${new Date(d.date_signature).toLocaleDateString("fr-FR")}` : ""}.
+            Le present devis n&apos;est qu&apos;une reconstitution informative.
+          </div>
+        )}
+
+        <details className="mb-4">
+          <summary className="cursor-pointer text-sm text-[#1A355E] font-medium">
+            Document officiel externe (reference / date de signature)
+          </summary>
+          <form action={definirDocumentOfficiel} className="flex flex-wrap items-end gap-2 mt-2">
+            <input type="hidden" name="devis_id" value={d.id} />
+            <div>
+              <label className="block text-xs text-gray-400">Reference d&apos;origine</label>
+              <input name="reference_externe" defaultValue={d.reference_externe ?? ""}
+                placeholder="ex. D-ASKV-..." className="border rounded px-2 py-1 text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400">Date de signature</label>
+              <input type="date" name="date_signature" defaultValue={d.date_signature ?? ""}
+                className="border rounded px-2 py-1 text-sm" />
+            </div>
+            <button type="submit" className="bg-[#1A355E] text-white text-sm px-3 py-1.5 rounded">Enregistrer</button>
+          </form>
+        </details>
+
+        {/* Liste des pieces jointes */}
+        {d.documents.length === 0 ? (
+          <p className="text-sm text-gray-400">Aucun document archive.</p>
+        ) : (
+          <ul className="divide-y">
+            {d.documents.map(doc => (
+              <li key={doc.id} className="py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <a href={`/api/documents/${doc.id}/download`} className="text-[#1A355E] hover:underline text-sm font-medium truncate inline-block max-w-full">
+                      {doc.nom_fichier}
+                    </a>
+                    <p className="text-xs text-gray-400">
+                      <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 mr-1">{CATEGORIE_DOC_LABEL[doc.categorie] || doc.categorie}</span>
+                      {doc.tag ? <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 mr-1">{doc.tag}</span> : null}
+                      {tailleLisible(doc.taille)}
+                      {doc.date_ajout ? ` — ${new Date(doc.date_ajout).toLocaleDateString("fr-FR")}` : ""}
+                    </p>
+                    {doc.commentaire ? <p className="text-xs text-gray-500 mt-0.5">{doc.commentaire}</p> : null}
+                  </div>
+                  <form action={supprimerDocument} className="inline shrink-0">
+                    <input type="hidden" name="devis_id" value={d.id} />
+                    <input type="hidden" name="doc_id" value={doc.id} />
+                    <button type="submit" className="text-red-600 hover:underline text-sm font-medium">Supprimer</button>
+                  </form>
+                </div>
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-xs text-gray-400">Modifier categorie / tag / commentaire</summary>
+                  <form action={modifierDocument} className="flex flex-wrap items-end gap-2 mt-2">
+                    <input type="hidden" name="devis_id" value={d.id} />
+                    <input type="hidden" name="doc_id" value={doc.id} />
+                    <div>
+                      <label className="block text-xs text-gray-400">Categorie</label>
+                      <select name="categorie" defaultValue={doc.categorie} className="border rounded px-2 py-1 text-sm">
+                        {CATEGORIES_DOC.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-gray-400">Tag</label>
+                      <input name="tag" defaultValue={doc.tag ?? ""} className="border rounded px-2 py-1 text-sm" />
+                    </div>
+                    <div className="grow">
+                      <label className="block text-xs text-gray-400">Commentaire</label>
+                      <input name="commentaire" defaultValue={doc.commentaire ?? ""} className="border rounded px-2 py-1 text-sm w-full" />
+                    </div>
+                    <button type="submit" className="bg-[#1A355E] text-white text-sm px-3 py-1.5 rounded">Enregistrer</button>
+                  </form>
+                </details>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Ajout d'une piece jointe */}
+        <form action={uploaderDocument} className="mt-4 border-t pt-3 flex flex-wrap items-end gap-2">
+          <input type="hidden" name="devis_id" value={d.id} />
+          <div>
+            <label className="block text-xs text-gray-400">Fichier (PDF, image, Word — max 25 Mo)</label>
+            <input type="file" name="fichier" required
+              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,application/pdf,image/jpeg,image/png"
+              className="text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400">Categorie</label>
+            <select name="categorie" defaultValue="devis_signe" className="border rounded px-2 py-1 text-sm">
+              {CATEGORIES_DOC.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400">Tag (optionnel)</label>
+            <input name="tag" placeholder="ex. original" className="border rounded px-2 py-1 text-sm" />
+          </div>
+          <div className="grow">
+            <label className="block text-xs text-gray-400">Commentaire (optionnel)</label>
+            <input name="commentaire" className="border rounded px-2 py-1 text-sm w-full" />
+          </div>
+          <button type="submit" className="bg-[#1A355E] text-white text-sm px-3 py-1.5 rounded">Joindre</button>
+        </form>
       </div>
 
       {/* Historique des modifications */}

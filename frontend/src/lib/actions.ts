@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { serverPost, serverPatch, serverPut, serverFetch, serverDelete } from "./api";
+import { serverPost, serverPatch, serverPut, serverFetch, serverDelete, serverPostForm } from "./api";
 
 export async function saveOffre(formData: FormData) {
   const id = formData.get("id") as string;
@@ -659,4 +659,59 @@ export async function envoyerFacture(formData: FormData) {
     redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
   }
   redirect(ajouterParam(retour, "envoye", "1"));
+}
+
+
+// --- Pieces jointes archivees (devis/contrat signe, scans) ---
+
+export async function uploaderDocument(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  const fichier = formData.get("fichier") as File | null;
+  if (!fichier || fichier.size === 0) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "doc_msg", "Aucun fichier selectionne"));
+  }
+  const out = new FormData();
+  out.append("fichier", fichier as File);
+  out.append("categorie", (formData.get("categorie") as string) || "autre");
+  const tag = (formData.get("tag") as string) || "";
+  const commentaire = (formData.get("commentaire") as string) || "";
+  if (tag) out.append("tag", tag);
+  if (commentaire) out.append("commentaire", commentaire);
+  try {
+    await serverPostForm(`/devis/${id}/documents`, out);
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "doc_msg", extraireDetail(e)));
+  }
+  redirect(`/devis/detail?id=${id}#documents`);
+}
+
+export async function modifierDocument(formData: FormData) {
+  const devisId = formData.get("devis_id") as string;
+  const docId = formData.get("doc_id") as string;
+  if (!devisId || !docId) redirect("/devis");
+  await serverPatch(`/documents/${docId}`, {
+    categorie: (formData.get("categorie") as string) || null,
+    tag: (formData.get("tag") as string) ?? null,
+    commentaire: (formData.get("commentaire") as string) ?? null,
+  });
+  redirect(`/devis/detail?id=${devisId}#documents`);
+}
+
+export async function supprimerDocument(formData: FormData) {
+  const devisId = formData.get("devis_id") as string;
+  const docId = formData.get("doc_id") as string;
+  if (!devisId || !docId) redirect("/devis");
+  await serverDelete(`/documents/${docId}`);
+  redirect(`/devis/detail?id=${devisId}#documents`);
+}
+
+export async function definirDocumentOfficiel(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  await serverPatch(`/devis/${id}/document-officiel`, {
+    reference_externe: (formData.get("reference_externe") as string) || null,
+    date_signature: (formData.get("date_signature") as string) || null,
+  });
+  redirect(`/devis/detail?id=${id}#documents`);
 }

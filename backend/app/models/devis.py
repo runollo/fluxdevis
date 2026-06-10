@@ -78,6 +78,15 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     # Independante du plan de paiement du setup.
     date_mise_en_ligne: Mapped[date | None] = mapped_column(Date)
 
+    # Document officiel externe : quand le vrai devis qui fait foi n'est pas celui
+    # genere par l'application mais une piece jointe signee (ex devis repris de
+    # l'ancien systeme, retourne signe par le client). Le devis applicatif devient
+    # alors une RECONSTITUTION informative ; ces deux champs tracent l'original.
+    # - reference_externe : numero/identifiant d'origine du document signe.
+    # - date_signature : date a laquelle le client a retourne le document signe.
+    reference_externe: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    date_signature: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     # Echeancier de l'acompte : date de depart (def = date_emission) et pas en
     # jours entre versements. Servent a pre-remplir les dates d'echeance des
     # factures d'acompte (dates restent editables ligne par ligne ensuite).
@@ -159,6 +168,11 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
         back_populates="devis", cascade="all, delete-orphan"
     )
     factures: Mapped[list["Facture"]] = relationship(back_populates="devis")
+    documents: Mapped[list["DevisDocument"]] = relationship(
+        back_populates="devis",
+        cascade="all, delete-orphan",
+        order_by="DevisDocument.id",
+    )
 
     @property
     def est_shopify(self) -> bool:

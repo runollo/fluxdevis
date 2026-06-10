@@ -1,6 +1,6 @@
 """Routes pour les devis."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -18,6 +18,7 @@ from app.models.client import Client
 from app.models.offre import Offre
 from app.models.societe import Societe
 from app.models.facture import Facture, FactureLigne, Echeance, TypeFacture, StatutFacture
+from app.models.devis_document import DevisDocument, CATEGORIES_DOCUMENT, CATEGORIE_DEFAUT
 from app.services.reference import generer_reference_facture
 from app.services.reference import generer_reference_devis, remplacer_prefixe_reference
 from app.services.generation_devis import (
@@ -207,6 +208,7 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
             selectinload(Devis.options),
             selectinload(Devis.articles_offerts),
             selectinload(Devis.factures),
+            selectinload(Devis.documents),
         )
     )
     d = result.scalar_one_or_none()
@@ -258,6 +260,8 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
         "date_emission": d.date_emission.isoformat(),
         "date_validite": d.date_validite.isoformat(),
         "date_mise_en_ligne": d.date_mise_en_ligne.isoformat() if d.date_mise_en_ligne else None,
+        "reference_externe": d.reference_externe,
+        "date_signature": d.date_signature.isoformat() if d.date_signature else None,
         "date_debut_echeancier": d.date_debut_echeancier.isoformat() if d.date_debut_echeancier else None,
         "intervalle_echeance_jours": d.intervalle_echeance_jours,
         "client_raison_sociale": d.client_raison_sociale,
@@ -313,7 +317,90 @@ async def detail_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
             for f in sorted(d.factures, key=lambda x: x.id)
             if f.archived_at is None
         ],
+        "documents": [
+            {
+                "id": doc.id,
+                "categorie": doc.categorie,
+                "tag": doc.tag,
+                "commentaire": doc.commentaire,
+                "nom_fichier": doc.nom_fichier,
+                "mime_type": doc.mime_type,
+                "taille": doc.taille,
+                "date_ajout": doc.created_at.isoformat() if doc.created_at else None,
+            }
+            for doc in sorted(d.documents, key=lambda x: x.id)
+            if doc.archived_at is None
+        ],
     }
+
+
+# Pieces jointes archivees : devis/contrat signe retourne par le client, scans...
+# Le contenu est stocke en base (bytea) -> une seule sauvegarde (dump PG) suffit.
+TAILLE_MAX_DOCUMENT = 25 * 1024 * 1024  # 25 Mo
+
+
+@router.post("/{devis_id}/documents", status_code=201)
+async def uploader_document(
+    devis_id: int,
+    fichier: UploadFile = File(...),
+    categorie: str = Form(CATEGORIE_DEFAUT),
+    tag: str | None = Form(None),
+    commentaire: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Archive une piece jointe (PDF/scan signe, contrat...) sur un devis."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(400, "Fichier vide")
+    if len(contenu) > TAILLE_MAX_DOCUMENT:
+        raise HTTPException(400, "Fichier trop volumineux (max 25 Mo)")
+    if categorie not in CATEGORIES_DOCUMENT:
+        categorie = CATEGORIE_DEFAUT
+
+    doc = DevisDocument(
+        devis_id=devis_id,
+        categorie=categorie,
+        tag=(tag.strip() or None) if tag else None,
+        commentaire=(commentaire.strip() or None) if commentaire else None,
+        nom_fichier=(fichier.filename or "document")[:255],
+        mime_type=fichier.content_type or "application/octet-stream",
+        taille=len(contenu),
+        contenu=contenu,
+    )
+    db.add(doc)
+    await db.commit()
+    await db.refresh(doc)
+    return {
+        "id": doc.id, "categorie": doc.categorie, "tag": doc.tag,
+        "commentaire": doc.commentaire, "nom_fichier": doc.nom_fichier,
+        "mime_type": doc.mime_type, "taille": doc.taille,
+    }
+
+
+class DocumentOfficielRequest(BaseModel):
+    reference_externe: str | None = None
+    date_signature: date | None = None
+
+
+@router.patch("/{devis_id}/document-officiel", response_model=DevisSummary)
+async def definir_document_officiel(
+    devis_id: int, data: DocumentOfficielRequest, db: AsyncSession = Depends(get_db)
+):
+    """Renseigne la reference et la date de signature du document officiel externe
+    (cas d'un devis reconstitue dont l'original signe est une piece jointe)."""
+    devis = await db.get(Devis, devis_id)
+    if not devis:
+        raise HTTPException(404, "Devis non trouve")
+    ref = (data.reference_externe or "").strip()
+    devis.reference_externe = ref or None
+    devis.date_signature = data.date_signature
+    await db.commit()
+    await db.refresh(devis)
+    return devis
 
 
 @router.get("/{devis_id}/edition")

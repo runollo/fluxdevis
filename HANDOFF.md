@@ -7,9 +7,14 @@ Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-10
 
 ## POINT DE REPRISE (2026-06-10)
 
-Catalogue editable + propositions budgetaires + maintenance Shopify affinee : TERMINES.
-La phase Shopify (devis + factures, parite de wording) etait deja achevee au 2026-06-02.
-Tout est committe, branche `main`, arbre git PROPRE.
+Pieces jointes archivees sur un devis : TERMINE (2026-06-10). Catalogue editable +
+propositions budgetaires + maintenance Shopify affinee etaient deja livres ; phase
+Shopify (devis + factures) achevee au 2026-06-02. Branche `main`.
+
+Derniere fonctionnalite (2026-06-10) — Pieces jointes / archivage du devis signe :
+on peut joindre a un devis le veritable document signe (devis/contrat retourne par le
+client) + des scans. Repond au cas ASK VSE (devis reconstitue dans l'appli, l'original
+signe etant archive a part). Cf. section "Pieces jointes archivees (documents du devis)".
 
 Derniers commits (les plus recents en haut) :
 - `608f4ba` (2026-06-02) fix : simulateur — panneau resultats collant scrollable
@@ -428,6 +433,54 @@ Le total reste net du cadeau.
 NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
+### Pieces jointes archivees (documents du devis) (fait 2026-06-10) TERMINEE
+Besoin : rattacher a un devis le VRAI document qui fait foi (devis/contrat signe
+retourne par le client), plus des scans. Cas declencheur ASK VSE : un devis emis avec
+l'ancien systeme, accepte et signe, a ete RECONSTITUE a l'identique dans l'appli (memes
+articles, meme prix) ; le devis applicatif n'est qu'informatif, l'original signe est
+archive sur le PC. Il fallait pouvoir joindre cet original et le distinguer.
+
+Choix de conception (valides avec Bruno) :
+- STOCKAGE EN BASE (bytea), pas sur le disque : une seule sauvegarde (le dump
+  PostgreSQL) contient toutes les archives, rien a synchroniser a part.
+- soft-delete (corbeille) comme le reste de l'app ; categorie + TAG libre + COMMENTAIRE
+  libre par piece (demande de Bruno).
+
+Backend :
+- modele `app/models/devis_document.py` : table `devis_documents` (devis_id FK CASCADE,
+  categorie, tag, commentaire, nom_fichier, mime_type, taille, contenu=LargeBinary,
+  TimestampMixin + SoftDeleteMixin). Categories : devis_signe / contrat_signe /
+  bon_commande / annexe / autre (constante `CATEGORIES_DOCUMENT`). Enregistre dans
+  `models/__init__.py`.
+- `Devis` : 2 champs `reference_externe` + `date_signature` (tracent l'original externe
+  quand le devis applicatif est une reconstitution) + relation `documents`.
+- migration `f6a7b8c9d0e1` (table + 2 colonnes). Appliquee.
+- endpoints (devis router) : `POST /api/devis/{id}/documents` (multipart UploadFile,
+  Form categorie/tag/commentaire, max 25 Mo), `PATCH /api/devis/{id}/document-officiel`
+  (reference_externe + date_signature). Le detail (`GET /api/devis/{id}/detail`) renvoie
+  desormais `documents[]` (metadonnees, sans le binaire) + `reference_externe`/`date_signature`.
+- nouveau routeur `app/api/routes/documents.py` (prefix `/api/documents`) :
+  `GET /{id}/download` (Response binaire, Content-Disposition RFC5987 accents OK),
+  `PATCH /{id}` (categorie/tag/commentaire), `DELETE /{id}` (soft-delete). Monte dans main.py.
+- NB upload : `python-multipart` est deja installe dans le venv.
+
+Frontend :
+- `api.ts` : helper `serverPostForm` (POST multipart SANS Content-Type fixe). L'upload
+  passe par une Server Action (serveur Next -> backend en direct), PAS par le proxy
+  `/api/[...path]` qui lit le body en `text()` et casserait le binaire. Le telechargement
+  (GET) passe par le proxy, qui gere deja arrayBuffer + Content-Disposition.
+- `actions.ts` : `uploaderDocument`, `modifierDocument`, `supprimerDocument`,
+  `definirDocumentOfficiel`.
+- `/devis/detail` : section "Documents archives" (ancre #documents) — bandeau ambre si
+  document officiel externe renseigne, formulaire reference/date de signature (details),
+  liste des pieces (lien telechargement, badge categorie, tag, taille/date, commentaire,
+  edition inline, suppression), formulaire d'ajout (fichier + categorie + tag + commentaire).
+Verifie end-to-end (upload/officiel/detail/download direct+proxy/patch/delete soft, tsc OK).
+A FAIRE EVENTUELLEMENT : vue corbeille + restauration des documents archives (le backend
+soft-delete est en place mais aucune UI ne liste/restaure les pieces archivees) ;
+garde-fou de confirmation a la suppression (aujourd'hui suppression directe, soft donc
+recuperable en base) ; categorie/tag des pieces exploitables ailleurs si besoin.
 
 ### Catalogue editable & propositions budgetaires (fait 2026-06-02, `d32216d`) TERMINEE
 Trois evolutions liees, developpees en couches sur des fichiers partages

@@ -43,6 +43,14 @@ export async function serverPut<T>(path: string, body: Record<string, unknown>):
   return res.json();
 }
 
+// Upload multipart (fichier) cote serveur. Ne PAS fixer Content-Type : fetch
+// pose lui-meme la frontiere multipart. Utilise pour les pieces jointes devis.
+export async function serverPostForm<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${BACKEND}${path}`, { method: "POST", body: form });
+  if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export async function serverDelete(path: string): Promise<void> {
   const res = await fetch(`${BACKEND}${path}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`API ${res.status}: ${await res.text()}`);

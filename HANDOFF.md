@@ -466,8 +466,8 @@ Conformite (art. 242 nonies A CGI) — numero attribue A L'EMISSION :
   (annee = date_emission). Tracee au journal. `GET /api/factures/next-numero` previsualise
   SANS consommer (DEPLACE avant `GET /{facture_id}` sinon capture par le convertisseur int).
 - Frontend : action `emettreFacture` ; bouton vert "Emettre (n° legal)" sur les factures
-  brouillon de `/devis/detail` ; le numero provisoire est grise avec mention "(provisoire)".
-  NB : bouton non encore ajoute sur la liste `/factures` (suite facile).
+  brouillon de `/devis/detail` ET de la liste `/factures` (mobile + desktop) ; le numero
+  provisoire est grise avec mention "(provisoire)".
 
 Import historique : `scripts/import_historique.py` (idempotent). Cree OMNIPUB (devis
 `FW-RAI-25122012`, 15/12/2025, plan 25/25/25/25, 6206 TTC + facture `F2026-001` emise) ;
@@ -478,9 +478,9 @@ NB Omnipub : seule la facture 001 a ete reellement emise (les 3 autres versement
 emis plus tard via FluxDevis) ; le devis Omnipub est cree avec le total global (detail des
 prestations non disponible dans l'ancien systeme, offre_id=2 par defaut, a affiner).
 Verifie end-to-end (import OK, emission attribue F2026-010 puis remise a 9, tsc OK).
-A FAIRE EVENTUELLEMENT : bouton Emettre sur la liste `/factures` ; affiner le devis Omnipub
-(detail des prestations) ; eventuellement passer date_emission a "aujourd'hui" au moment
-de l'emission (aujourd'hui conservee telle quelle, editable via modifier_facture).
+A FAIRE EVENTUELLEMENT : affiner le devis Omnipub (detail des prestations) ; eventuellement
+passer date_emission a "aujourd'hui" au moment de l'emission (aujourd'hui conservee telle
+quelle, editable via modifier_facture).
 
 ### Pieces jointes archivees (documents du devis) (fait 2026-06-10) TERMINEE
 Besoin : rattacher a un devis le VRAI document qui fait foi (devis/contrat signe

@@ -49,6 +49,10 @@ RESTE / OPTIONNEL (pas de dependance, a faire quand utile) :
 2. UI annexe maintenance grand public : l'editeur de contenu de pack existe deja dans
    /catalogue/option ; reste eventuellement une vue de consultation cote client. Confort.
 3. Auth multi-utilisateur (Phase E) : differee (Bruno seul utilisateur).
+4. REFORME FACTURE ELECTRONIQUE (echeances datees) : emission PDF/email maintenue jusqu'en
+   2027 (decision Bruno). RAPPEL non reportable : verifier avec INDY (logiciel compta de
+   Bruno) la RECEPTION e-facture AVANT sept. 2026. Pont FluxDevis->Indy a etudier en 2027.
+   Detail complet : section "Pieces jointes et telechargement en PDF" > ROADMAP conformite.
 
 ---
 
@@ -486,11 +490,28 @@ actuel, vs reecriture ReportLab). Bruno a accepte l'install systeme.
 - A FAIRE PAR BRUNO (bloquant pour le PDF) :
     sudo apt install --no-install-recommends libreoffice-core libreoffice-writer
   Puis tester un telechargement/envoi PDF. Tant que non installe : Word OK, PDF -> 503.
-- ROADMAP conformite (cf. echange 2026-06-10) : Phase 2 = generer Factur-X (PDF/A-3 +
-  XML EN 16931, le XML est le vrai travail nouveau, lib `factur-x`) ; Phase 3 (avant
-  sept. 2027) = transmission via une PDP (canal obligatoire, PAS l'email ; a cadrer avec
-  l'expert-comptable, souvent fourni par son ecosysteme). Le PDF email reste utile en
-  interim et pour le B2C/etranger (hors e-invoicing, e-reporting).
+- ROADMAP conformite facture electronique (cf. echange 2026-06-10) :
+  * DECISION Bruno : on CONTINUE l'emission en PDF/email via FluxDevis jusqu'a l'echeance
+    (legal aujourd'hui, aucune PDP obligatoire avant la reforme). Pas de lien heberge /
+    suivi de clics en interne (necessiterait d'heberger FluxDevis publiquement, et la PDP
+    rendra ca redondant pour le B2B). Le "tiers de confiance / preuve d'envoi" ne s'obtient
+    PAS avec un lien maison : il faut une LRE qualifiee eIDAS, ou la PDP pour le B2B.
+  * Calendrier : RECEPTION e-facture obligatoire 1er sept. 2026 (TOUTES entreprises) ;
+    EMISSION TPE/PME 1er sept. 2027.
+  * Logiciel de compta de Bruno = INDY (indy.fr) -> c'est l'interlocuteur pour la reforme
+    (Indy a une offre facture electronique ; statut "Plateforme Agreee" propre ou via
+    partenaire A VERIFIER chez Indy). (NB : l'email @getyooz.com du contexte est celui du
+    FILS de Bruno, PAS un canal pro a utiliser.)
+  * A FAIRE (rappels) :
+    - AVANT SEPT. 2026 : verifier avec INDY comment RECEVOIR les factures fournisseurs au
+      format electronique (activation / raccordement a la plateforme agreee). Seul point
+      non reportable.
+    - EN 2027 : etudier le PONT FluxDevis -> Indy (export/API) pour l'emission : soit
+      FluxDevis produit la Factur-X et la pousse dans Indy (qui transmet via la PA), soit
+      bascule de l'emission dans Indy (mais perte de la logique devis/simulation sur-mesure).
+  * Cote code FluxDevis quand on s'y mettra : Phase 2 = generer Factur-X (PDF/A-3 + XML
+    EN 16931, lib `factur-x`) ; le PDF email reste utile en interim et pour B2C/etranger
+    (hors e-invoicing -> e-reporting).
 Verifie : tsc OK, docx toujours dispo, 503 propre sans LibreOffice. (Conversion PDF reelle
 a tester apres install.)
 

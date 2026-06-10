@@ -41,9 +41,10 @@ Derniers commits (les plus recents en haut) :
 - `ad783de` / anterieurs : phase Shopify (devis + factures). Cf. "Phase Shopify".
 
 RESTE / OPTIONNEL (pas de dependance, a faire quand utile) :
-1. Envoi email : CODE EN PLACE (moteur SMTP de la messagerie pro, OVH par defaut) pour le
-   DEVIS et les FACTURES. Il ne manque que les identifiants : renseigner SMTP_USER +
-   SMTP_PASSWORD dans backend/.env, puis tester un envoi reel. Cf. "Envoi email (SMTP)".
+1. Envoi email : CODE EN PLACE (SMTP de la messagerie pro) pour DEVIS et FACTURES,
+   configurable depuis la PAGE PARAMETRES (plus besoin d'editer .env). Activation par
+   Bruno : page Parametres -> renseigner adresse + mot de passe SMTP -> Enregistrer ->
+   bouton "Envoyer un email de test". Cf. "Page Parametres" et "Envoi email (SMTP)".
    (Eventuel +) sortie PDF au lieu de Word pour la piece jointe.
 2. UI annexe maintenance grand public : l'editeur de contenu de pack existe deja dans
    /catalogue/option ; reste eventuellement une vue de consultation cote client. Confort.
@@ -447,6 +448,26 @@ Le total reste net du cadeau.
 NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
+### Page Parametres (reglages editables depuis l'UI) (fait 2026-06-10) TERMINEE
+Demande Bruno : un endroit "Parametres" pour renseigner les parametres d'envoi (et
+futurs reglages) sans toucher au code/.env.
+- Modele singleton `Parametres` (table `parametres`, ligne id=1, migration `b8c9d0e1f2a3`) :
+  smtp_host/port/starttls/user/password/from (NULL = repli .env). Enregistre dans
+  `models/__init__.py`.
+- Service `app/services/parametres.py` : `charger(db)` (get-or-create), `smtp_config(db)`
+  -> `SmtpConfig` (fusion base prioritaire + .env repli ; `.actif` = host+user+password).
+  L'envoi email lit desormais cette config (email.py / email_smtp.py db-aware ; les routes
+  `factures.envoyer` et `devis.envoyer` passent `db`).
+- API `app/api/routes/parametres.py` (prefix /api/parametres) : `GET /` (mot de passe
+  MASQUE -> `smtp_password_defini` bool + `smtp_actif`), `PATCH /` (mot de passe change
+  seulement si fourni non vide ; champ vide -> NULL = repli .env), `POST /test-email`
+  (envoi de test). Monte dans main.py.
+- Frontend : page `/parametres` (Server Component) — section "Envoi d'emails (SMTP)"
+  pre-remplie (defauts OVH), badge Actif/Non configure, + section "Tester l'envoi" (bouton
+  desactive tant que non actif). Actions `saveParametres` / `envoyerEmailTest`. Lien
+  "Parametres" dans la sidebar desktop (pied) + engrenage dans le header mobile.
+Verifie end-to-end (GET masque, PATCH conserve le mdp, save via UI, reset, tsc OK).
 
 ### Envoi email (SMTP de la messagerie pro) — devis + factures (fait 2026-06-10) CODE PRET
 Decision Bruno : pas de service tiers type Resend ; envoi via le SMTP de sa propre

@@ -394,6 +394,34 @@ export async function saveDevis(formData: FormData) {
 }
 
 
+export async function saveParametres(formData: FormData) {
+  const body = {
+    smtp_host: (formData.get("smtp_host") as string) || null,
+    smtp_port: Number(formData.get("smtp_port")) || null,
+    smtp_starttls: formData.get("smtp_starttls") === "true",
+    smtp_user: (formData.get("smtp_user") as string) || null,
+    smtp_from: (formData.get("smtp_from") as string) || null,
+    // vide = ne pas changer le mot de passe (le backend le conserve)
+    smtp_password: (formData.get("smtp_password") as string) || "",
+  };
+  try {
+    await serverPatch(`/parametres/`, body);
+  } catch (e) {
+    redirect(ajouterParam("/parametres", "msg", extraireDetail(e)));
+  }
+  redirect("/parametres?ok=1");
+}
+
+export async function envoyerEmailTest(formData: FormData) {
+  const destinataire = (formData.get("destinataire") as string) || "";
+  try {
+    await serverPost(`/parametres/test-email`, { destinataire });
+  } catch (e) {
+    redirect(ajouterParam("/parametres", "msg", extraireDetail(e)));
+  }
+  redirect("/parametres?test=1");
+}
+
 export async function envoyerDevis(formData: FormData) {
   const id = formData.get("devis_id") as string;
   if (!id) redirect("/devis");

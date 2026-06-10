@@ -31,7 +31,7 @@ from app.services.facturation_maintenance import (
 )
 from app.services import journal as journal_svc
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
-from app.core.config import get_settings
+from app.services.parametres import smtp_config
 
 _DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -1036,11 +1036,10 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
     Utilise le moteur configure (SMTP de la messagerie pro en priorite). Renvoie
     400 tant qu'aucun moteur n'est configure ou si l'email du client est absent.
     """
-    if not email_actif():
+    if not await email_actif(db):
         raise HTTPException(
             400,
-            "Envoi email non configure : renseignez SMTP_USER + SMTP_PASSWORD "
-            "(votre messagerie pro) dans backend/.env.",
+            "Envoi email non configure : renseignez les parametres SMTP dans Parametres.",
         )
     devis, societe, buf, filename = await _generer_devis_docx(devis_id, db)
 
@@ -1051,8 +1050,8 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
             "Email client absent du devis : renseignez l'email du client puis recreez le devis.",
         )
 
-    settings = get_settings()
-    expediteur = settings.SMTP_FROM or settings.RESEND_FROM
+    cfg = await smtp_config(db)
+    expediteur = cfg.sender
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 
@@ -1073,7 +1072,7 @@ async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db))
         reply_to=(societe.email if societe else None),
     )
     try:
-        await envoyer_email(email, expediteur)
+        await envoyer_email(db, email, expediteur)
     except EmailError as e:
         raise HTTPException(400, str(e))
     return {"ok": True, "destinataire": destinataire}

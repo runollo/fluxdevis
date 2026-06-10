@@ -7,6 +7,7 @@ from app.models.devis import Devis, DevisLigne, DevisOptionLigne, DevisArticleOf
 from app.models.devis_document import DevisDocument
 from app.models.facture import Facture, FactureLigne, Echeance, CompteurFacture
 from app.models.journal import JournalModification
+from app.models.parametres import Parametres
 
 __all__ = [
     "Base",
@@ -25,4 +26,5 @@ __all__ = [
     "Echeance",
     "CompteurFacture",
     "JournalModification",
+    "Parametres",
 ]

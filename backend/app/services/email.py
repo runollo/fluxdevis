@@ -1,33 +1,38 @@
 """Point d'entree unique pour l'envoi d'emails.
 
 Choisit le moteur selon la configuration : le SMTP de ta messagerie pro est
-prioritaire (recommande), Resend sert de repli s'il est seul configure. Les
-routes importent UNIQUEMENT ce module (Email, PieceJointe, EmailError,
-email_actif, envoyer_email) sans se soucier du moteur sous-jacent.
+prioritaire (recommande), Resend sert de repli s'il est seul configure. La config
+SMTP est resolue depuis la base (page Parametres) puis le .env. Les routes importent
+UNIQUEMENT ce module et lui passent la session db.
 """
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.email_resend import (
     Email, PieceJointe, EmailError,
     email_actif as _resend_actif,
     envoyer_email as _envoyer_resend,
 )
-from app.services.email_smtp import smtp_actif, envoyer_email_smtp
+from app.services.email_smtp import envoyer_email_smtp
+from app.services.parametres import smtp_config
 
 __all__ = ["Email", "PieceJointe", "EmailError", "email_actif", "envoyer_email"]
 
 
-def email_actif() -> bool:
+async def email_actif(db: AsyncSession) -> bool:
     """Vrai si AU MOINS un moteur d'envoi est configure (SMTP ou Resend)."""
-    return smtp_actif() or _resend_actif()
+    cfg = await smtp_config(db)
+    return cfg.actif or _resend_actif()
 
 
-async def envoyer_email(email: Email, expediteur: str) -> dict:
+async def envoyer_email(db: AsyncSession, email: Email, expediteur: str) -> dict:
     """Envoie l'email via le moteur disponible (SMTP prioritaire, puis Resend)."""
-    if smtp_actif():
-        return await envoyer_email_smtp(email, expediteur)
+    cfg = await smtp_config(db)
+    if cfg.actif:
+        return await envoyer_email_smtp(email, expediteur, cfg)
     if _resend_actif():
         return await _envoyer_resend(email, expediteur)
     raise EmailError(
-        "Envoi non configure : renseignez SMTP_USER + SMTP_PASSWORD (recommande) "
-        "ou RESEND_API_KEY dans backend/.env."
+        "Envoi non configure : renseignez l'adresse et le mot de passe SMTP dans "
+        "Parametres (ou backend/.env)."
     )

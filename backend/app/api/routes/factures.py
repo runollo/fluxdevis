@@ -16,6 +16,7 @@ from app.services.numerotation_facture import prochain_numero, numero_en_cours, 
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.services.parametres import smtp_config
 from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
@@ -281,11 +282,10 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     HANDOFF). Tant que RESEND_API_KEY n'est pas renseignee, renvoie 400 et
     n'envoie rien. A finaliser quand Bruno aura choisi sa solution d'envoi.
     """
-    if not email_actif():
+    if not await email_actif(db):
         raise HTTPException(
             400,
-            "Envoi email non configure : renseignez SMTP_USER + SMTP_PASSWORD "
-            "(votre messagerie pro) dans backend/.env.",
+            "Envoi email non configure : renseignez les parametres SMTP dans Parametres.",
         )
 
     facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
@@ -297,10 +297,10 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
             "Email client absent du devis : renseignez l'email du client puis regenerez le devis.",
         )
 
-    settings = get_settings()
-    # Expediteur affiche : SMTP_FROM (ou RESEND_FROM) si defini, sinon construit
-    # depuis la societe. Pour le SMTP, l'adresse doit correspondre a SMTP_USER.
-    expediteur = settings.SMTP_FROM or settings.RESEND_FROM
+    # Expediteur affiche : parametre SMTP_FROM si defini, sinon construit depuis la
+    # societe. Pour le SMTP, l'adresse doit correspondre a la boite authentifiee.
+    cfg = await smtp_config(db)
+    expediteur = cfg.sender
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 
@@ -314,7 +314,7 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     )
 
     try:
-        resultat = await envoyer_email(email, expediteur)
+        resultat = await envoyer_email(db, email, expediteur)
     except EmailError as e:
         raise HTTPException(400, str(e))
 

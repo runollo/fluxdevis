@@ -403,6 +403,7 @@ export async function saveParametres(formData: FormData) {
     smtp_from: (formData.get("smtp_from") as string) || null,
     // vide = ne pas changer le mot de passe (le backend le conserve)
     smtp_password: (formData.get("smtp_password") as string) || "",
+    envoi_client_actif: formData.get("envoi_client_actif") === "true",
   };
   try {
     await serverPatch(`/parametres/`, body);

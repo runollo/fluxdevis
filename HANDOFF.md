@@ -494,6 +494,22 @@ actuel, vs reecriture ReportLab). Bruno a accepte l'install systeme.
 Verifie : tsc OK, docx toujours dispo, 503 propre sans LibreOffice. (Conversion PDF reelle
 a tester apres install.)
 
+### Garde-fou : activer/desactiver l'envoi direct au client (fait 2026-06-10) TERMINEE
+Demande Bruno : pouvoir desactiver l'envoi DIRECT au client (le temps de prendre l'outil
+en main), l'envoi "a moi" restant toujours possible.
+- `Parametres.envoi_client_actif` (bool, defaut FALSE, migration `d0e1f2a3b4c5`). Desactive
+  par defaut = securite (pas d'envoi accidentel au client tant que non active).
+- Garde-fou SERVEUR : `POST /devis|factures/{id}/envoyer` avec mode=client renvoie 403 si
+  `envoi_client_actif` est False (le mode=expediteur reste autorise). Defense en profondeur
+  meme si l'UI masque le bouton.
+- API parametres : `envoi_client_actif` dans GET + PATCH (partiel).
+- Frontend : interrupteur (select Active/Desactive, encart ambre) dans la section SMTP de
+  /parametres (action `saveParametres`). Le bouton "Au client"/"au client" est MASQUE sur
+  /devis/detail (devis + factures) et /factures (mobile + desktop) quand desactive ; un
+  message l'indique sur le bloc d'envoi du devis. Les pages fetchent le flag via GET /parametres/.
+Verifie end-to-end (403 quand off, bouton masque/affiche selon le flag, tsc OK). Etat laisse
+sur DESACTIVE (choix de Bruno).
+
 ### Apercu email + choix du destinataire a l'envoi (fait 2026-06-10) TERMINEE
 - APERCU : `GET /api/parametres/apercu?type=devis|facture` rend l'email (objet + html)
   avec des donnees d'EXEMPLE (SimpleNamespace) -> reflete les modeles enregistres.

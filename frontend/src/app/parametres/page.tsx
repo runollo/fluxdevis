@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 interface Parametres {
   smtp_host: string | null; smtp_port: number | null; smtp_starttls: boolean | null;
   smtp_user: string | null; smtp_from: string | null;
-  smtp_password_defini: boolean; smtp_actif: boolean;
+  smtp_password_defini: boolean; smtp_actif: boolean; envoi_client_actif: boolean;
   email_signature: string; email_objet_devis: string; email_corps_devis: string;
   email_objet_facture: string; email_corps_facture: string;
 }
@@ -108,6 +108,20 @@ export default async function ParametresPage(
               placeholder="FluXweb <contact@fluxweb.fr>" className="w-full border rounded px-3 py-2 text-sm" />
             <p className="text-[11px] text-gray-400 mt-0.5">
               Doit correspondre a la boite d&apos;envoi (OVH refuse un expediteur different).
+            </p>
+          </div>
+          <div className="rounded border border-amber-200 bg-amber-50 p-3">
+            <label className="block text-xs font-semibold text-amber-800 mb-1">
+              Envoi direct au client
+            </label>
+            <select name="envoi_client_actif" defaultValue={String(p.envoi_client_actif)}
+              className="border rounded px-2 py-2 text-sm">
+              <option value="false">Desactive (securite) — seul &laquo; M&apos;envoyer &raquo; est possible</option>
+              <option value="true">Active — l&apos;envoi direct au client est autorise</option>
+            </select>
+            <p className="text-[11px] text-amber-700 mt-1">
+              Tant que c&apos;est desactive, impossible d&apos;envoyer par erreur au client : tu peux
+              seulement t&apos;envoyer le document pour le transferer toi-meme. Active-le quand tu es a l&apos;aise.
             </p>
           </div>
           <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">

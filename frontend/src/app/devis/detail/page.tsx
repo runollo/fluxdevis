@@ -130,9 +130,11 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
   const id = params.id;
   let d: DevisDetail | null = null;
   let historique: HistoriqueLigne[] = [];
+  let envoiClientActif = false;
   if (id) {
     try { d = await serverFetch<DevisDetail>(`/devis/${id}/detail`); } catch {}
     try { historique = await serverFetch<HistoriqueLigne[]>(`/devis/${id}/historique`); } catch {}
+    try { envoiClientActif = (await serverFetch<{ envoi_client_actif: boolean }>("/parametres/")).envoi_client_actif; } catch {}
   }
 
   if (!d) {
@@ -256,7 +258,11 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             </summary>
             <div className="mt-1 p-3 border rounded bg-gray-50 flex flex-col gap-2">
               <p className="text-xs text-gray-500">Confirmez le destinataire :</p>
-              {d.client_email ? (
+              {!envoiClientActif ? (
+                <span className="text-xs text-amber-700">
+                  Envoi direct au client desactive (Parametres) — seul &laquo; M&apos;envoyer &raquo; est possible.
+                </span>
+              ) : d.client_email ? (
                 <button type="submit" name="mode" value="client"
                   className="px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
                   Envoyer au client ({d.client_email})
@@ -579,7 +585,9 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                     <details className="inline-block align-middle">
                       <summary className="cursor-pointer text-[#1A355E] hover:underline text-sm font-medium list-none">Envoyer</summary>
                       <span className="ml-2 inline-flex gap-2">
-                        <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                        {envoiClientActif && (
+                          <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                        )}
                         <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
                       </span>
                     </details>

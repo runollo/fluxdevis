@@ -27,6 +27,13 @@ class Parametres(Base, TimestampMixin):
     smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Garde-fou : autorise (ou non) l'envoi DIRECT au client. Desactive par defaut
+    # tant que l'utilisateur n'a pas pris l'outil en main ; l'envoi "a moi" (a sa
+    # propre adresse, pour transferer) reste toujours possible.
+    envoi_client_actif: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+
     # Modeles d'emails (corps + objet) et signature. NULL/vide = modele par defaut.
     # Variables disponibles : {reference}/{numero}, {date}, {date_validite}/{date_echeance},
     # {client}, {interlocuteur}, {montant_ttc}, {marque}, {type_document}, {periode}.

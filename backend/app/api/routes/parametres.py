@@ -31,6 +31,7 @@ class ParametresOut(BaseModel):
     smtp_from: str | None
     smtp_password_defini: bool
     smtp_actif: bool
+    envoi_client_actif: bool
     # Modeles d'emails : valeur EFFECTIVE (stockee ou defaut) pour pre-remplir l'UI.
     email_signature: str
     email_objet_devis: str
@@ -47,6 +48,7 @@ async def _serialiser(db: AsyncSession) -> ParametresOut:
         smtp_user=p.smtp_user, smtp_from=p.smtp_from,
         smtp_password_defini=bool(p.smtp_password),
         smtp_actif=cfg.actif,
+        envoi_client_actif=p.envoi_client_actif,
         email_signature=p.email_signature or modeles.DEFAUT_SIGNATURE,
         email_objet_devis=p.email_objet_devis or modeles.DEFAUT_OBJET_DEVIS,
         email_corps_devis=p.email_corps_devis or modeles.DEFAUT_CORPS_DEVIS,
@@ -68,6 +70,7 @@ class ParametresUpdate(BaseModel):
     smtp_user: str | None = None
     smtp_from: str | None = None
     smtp_password: str | None = None  # vide/None = ne pas changer le mot de passe
+    envoi_client_actif: bool | None = None
     email_signature: str | None = None
     email_objet_devis: str | None = None
     email_corps_devis: str | None = None
@@ -101,6 +104,8 @@ async def update_parametres(data: ParametresUpdate, db: AsyncSession = Depends(g
         p.smtp_port = fournis["smtp_port"]
     if "smtp_starttls" in fournis:
         p.smtp_starttls = fournis["smtp_starttls"]
+    if "envoi_client_actif" in fournis:
+        p.envoi_client_actif = bool(fournis["envoi_client_actif"])
     for champ in (
         "smtp_host", "smtp_user", "smtp_from", "email_signature",
         "email_objet_devis", "email_corps_devis",

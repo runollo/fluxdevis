@@ -94,6 +94,10 @@ export default async function FacturesPage(
     factures = await serverFetch<Facture[]>(`/factures/?${qs.toString()}`);
   } catch {}
 
+  // Garde-fou : l'envoi direct au client n'est propose que s'il est active dans Parametres.
+  let envoiClientActif = false;
+  try { envoiClientActif = (await serverFetch<{ envoi_client_actif: boolean }>("/parametres/")).envoi_client_actif; } catch {}
+
   // Donnees des filtres : tous les clients ; et, si un client est choisi, ses
   // projets (devis) pour le second menu deroulant.
   let clients: ClientOpt[] = [];
@@ -288,9 +292,11 @@ export default async function FacturesPage(
                           Envoyer par email&hellip;
                         </summary>
                         <div className="mt-1 flex gap-2">
-                          <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
-                            Au client{f.client ? ` (${f.client})` : ""}
-                          </button>
+                          {envoiClientActif && (
+                            <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                              Au client{f.client ? ` (${f.client})` : ""}
+                            </button>
+                          )}
                           <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
                             A moi
                           </button>
@@ -380,7 +386,9 @@ export default async function FacturesPage(
                             <details className="inline-block align-middle ml-3">
                               <summary className="cursor-pointer text-[#1A355E] hover:underline font-medium list-none">Envoyer</summary>
                               <span className="ml-2 inline-flex gap-2">
-                                <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                                {envoiClientActif && (
+                                  <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                                )}
                                 <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
                               </span>
                             </details>

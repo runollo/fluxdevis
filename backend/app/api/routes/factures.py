@@ -280,12 +280,19 @@ async def envoyer_facture_email(
 
     facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
     mode = (data.mode if data else "client")
+    params = await charger_parametres(db)
 
     if mode == "expediteur":
         destinataire = await adresse_expediteur(db, societe)
         if not destinataire:
             raise HTTPException(400, "Adresse d'envoi introuvable : configurez le SMTP.")
     else:
+        if not params.envoi_client_actif:
+            raise HTTPException(
+                403,
+                "Envoi direct au client desactive : activez-le dans Parametres "
+                "(ou utilisez \"A moi\" pour transferer vous-meme).",
+            )
         destinataire = devis.client_email if devis else None
         if not destinataire:
             raise HTTPException(
@@ -298,7 +305,6 @@ async def envoyer_facture_email(
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 
-    params = await charger_parametres(db)
     sujet, html = construire_email_facture(facture, devis, societe, params)
     if mode == "expediteur":
         sujet = f"[A transferer] {sujet}"

@@ -37,23 +37,47 @@ class FactureSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
-@router.get("/", response_model=list[FactureSummary])
+class FactureListItem(BaseModel):
+    """Facture enrichie pour la liste : porte le client et le projet (devis)."""
+    id: int
+    numero: str
+    type: TypeFacture
+    statut: StatutFacture
+    date_emission: date
+    date_echeance: date
+    objet: str
+    total_ttc: Decimal
+    devis_id: int | None = None
+    client: str | None = None
+    projet_ref: str | None = None
+    projet_nom: str | None = None
+
+
+@router.get("/", response_model=list[FactureListItem])
 async def list_factures(
     statut: StatutFacture | None = None,
     type: TypeFacture | None = None,
     archives: bool = False,
     q: str | None = None,
+    client_id: int | None = None,
+    devis_id: int | None = None,
     skip: int = 0,
     limit: int = 25,
     db: AsyncSession = Depends(get_db),
 ):
-    """Liste les factures. Par defaut, exclut les factures archivees (corbeille).
+    """Liste les factures (enrichies du client et du projet). Exclut la corbeille par defaut.
 
     - archives=true : retourne uniquement les factures archivees.
     - q : recherche sur le numero ou l'objet (insensible a la casse).
+    - client_id : ne garde que les factures du client (via le devis rattache).
+    - devis_id : ne garde que les factures d'un projet (devis) donne.
     - skip / limit : pagination par decalage.
     """
-    query = select(Facture).order_by(Facture.date_emission.desc(), Facture.id.desc())
+    query = (
+        select(Facture)
+        .options(selectinload(Facture.devis))
+        .order_by(Facture.date_emission.desc(), Facture.id.desc())
+    )
     if archives:
         query = query.where(Facture.archived_at.is_not(None))
     else:
@@ -62,12 +86,28 @@ async def list_factures(
         query = query.where(Facture.statut == statut)
     if type:
         query = query.where(Facture.type == type)
+    if devis_id:
+        query = query.where(Facture.devis_id == devis_id)
+    if client_id:
+        query = query.join(Devis, Facture.devis_id == Devis.id).where(
+            Devis.client_id == client_id
+        )
     if q:
         motif = f"%{q.strip()}%"
         query = query.where(Facture.numero.ilike(motif) | Facture.objet.ilike(motif))
     query = query.offset(max(skip, 0)).limit(max(min(limit, 200), 1))
-    result = await db.execute(query)
-    return result.scalars().all()
+    factures = (await db.execute(query)).scalars().all()
+    return [
+        FactureListItem(
+            id=f.id, numero=f.numero, type=f.type, statut=f.statut,
+            date_emission=f.date_emission, date_echeance=f.date_echeance,
+            objet=f.objet, total_ttc=f.total_ttc, devis_id=f.devis_id,
+            client=f.devis.client_raison_sociale if f.devis else None,
+            projet_ref=f.devis.reference if f.devis else None,
+            projet_nom=f.devis.offre_nom if f.devis else None,
+        )
+        for f in factures
+    ]
 
 
 @router.get("/export.xlsx")

@@ -131,6 +131,7 @@ async def list_devis(
     statut: StatutDevis | None = None,
     archives: bool = False,
     q: str | None = None,
+    client_id: int | None = None,
     skip: int = 0,
     limit: int = 25,
     db: AsyncSession = Depends(get_db),
@@ -139,6 +140,7 @@ async def list_devis(
 
     - archives=true : retourne uniquement les devis archives.
     - q : recherche sur la reference, le client ou l'offre (insensible a la casse).
+    - client_id : ne garde que les devis (projets) d'un client donne.
     - skip / limit : pagination par decalage.
     """
     query = select(Devis).order_by(Devis.date_emission.desc(), Devis.id.desc())
@@ -151,6 +153,8 @@ async def list_devis(
     query = query.where(Devis.version_active.is_(True))
     if statut:
         query = query.where(Devis.statut == statut)
+    if client_id:
+        query = query.where(Devis.client_id == client_id)
     if q:
         motif = f"%{q.strip()}%"
         query = query.where(

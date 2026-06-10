@@ -447,6 +447,22 @@ NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
 
+### Filtres de la page Factures : client / projet / statut (fait 2026-06-10) TERMINEE
+Modele : un CLIENT a plusieurs PROJETS, ou un projet = un DEVIS (l'extension d'un site
+l'an prochain = un nouveau devis sous le meme client). La page Factures expose desormais
+le client et le projet, et se filtre.
+- Backend : `GET /api/factures/` renvoie `FactureListItem` (enrichi : `client`,
+  `projet_ref`, `projet_nom`, `devis_id`, via `selectinload(Facture.devis)`) et accepte
+  `client_id` (jointure `Devis.client_id`) + `devis_id`, en plus de statut/type/q/archives.
+  `GET /api/devis/` accepte `client_id` (pour peupler le menu Projet d'un client).
+- Frontend (`/factures`, Server Component) : barre de filtres (form GET) recherche + Client
+  + Projet (n'apparait qu'une fois un client choisi) + Statut (libelles metier : brouillon /
+  a encaisser / en retard / payee / annulee) + Type ; colonnes Client et Projet (ref devis
+  cliquable -> detail) en desktop et mobile ; pagination conserve les filtres.
+- Edge connu (acceptable, pur Server Component) : changer de client en gardant un projet
+  d'un autre client renvoie une liste vide -> remettre "Tous les projets".
+Verifie end-to-end (filtres combines client+statut+type+devis, navigateur OK, tsc OK).
+
 ### Numerotation legale des factures & import historique (fait 2026-06-10) TERMINEE
 Contexte : FluxDevis devient la source unique de facturation. L'ancien tarificateur
 emettait deja des factures reelles `F2026-001..009` (Omnipub 001-004 dont seule 001

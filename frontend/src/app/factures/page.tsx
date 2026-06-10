@@ -11,7 +11,27 @@ function eur(v: number | string) {
 interface Facture {
   id: number; numero: string; type: string; statut: string;
   date_emission: string; date_echeance: string; objet: string; total_ttc: string;
+  devis_id?: number | null; client?: string | null;
+  projet_ref?: string | null; projet_nom?: string | null;
 }
+interface ClientOpt { id: number; raison_sociale: string; }
+interface ProjetOpt { id: number; reference: string; offre_nom?: string }
+
+// Statuts proposes au filtre (libelles metier alignes sur les statuts reels).
+const STATUT_FILTRES: { value: string; label: string }[] = [
+  { value: "", label: "Tous les statuts" },
+  { value: "brouillon", label: "Brouillon (provisoire)" },
+  { value: "emise", label: "À encaisser (émise)" },
+  { value: "en_retard", label: "En retard" },
+  { value: "payee", label: "Payée" },
+  { value: "annulee", label: "Annulée" },
+];
+const TYPE_FILTRES: { value: string; label: string }[] = [
+  { value: "", label: "Tous les types" },
+  { value: "acompte", label: "Acompte" },
+  { value: "solde", label: "Solde" },
+  { value: "maintenance", label: "Maintenance" },
+];
 
 const STATUT_COLORS: Record<string, string> = {
   brouillon: "bg-gray-100 text-gray-700",
@@ -48,16 +68,24 @@ function ActionsFacture({ f }: { f: Facture }) {
 const PAR_PAGE = 25;
 
 export default async function FacturesPage(
-  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string; envoye?: string }> }
+  { searchParams }: { searchParams: Promise<{ archives?: string; suppr_msg?: string; q?: string; skip?: string; envoye?: string; client?: string; projet?: string; statut?: string; type?: string }> }
 ) {
   const params = await searchParams;
   const corbeille = params.archives === "1";
   const q = (params.q || "").trim();
+  const clientId = (params.client || "").trim();
+  const projet = (params.projet || "").trim();
+  const statut = (params.statut || "").trim();
+  const type = (params.type || "").trim();
   const skip = Math.max(Number(params.skip) || 0, 0);
 
   const qs = new URLSearchParams();
   if (corbeille) qs.set("archives", "true");
   if (q) qs.set("q", q);
+  if (clientId) qs.set("client_id", clientId);
+  if (projet) qs.set("devis_id", projet);
+  if (statut) qs.set("statut", statut);
+  if (type) qs.set("type", type);
   qs.set("skip", String(skip));
   qs.set("limit", String(PAR_PAGE));
 
@@ -66,14 +94,33 @@ export default async function FacturesPage(
     factures = await serverFetch<Facture[]>(`/factures/?${qs.toString()}`);
   } catch {}
 
-  const lienPage = (nouveauSkip: number) => {
+  // Donnees des filtres : tous les clients ; et, si un client est choisi, ses
+  // projets (devis) pour le second menu deroulant.
+  let clients: ClientOpt[] = [];
+  try { clients = await serverFetch<ClientOpt[]>(`/clients/?limit=200`); } catch {}
+  let projets: ProjetOpt[] = [];
+  if (clientId) {
+    try { projets = await serverFetch<ProjetOpt[]>(`/devis/?client_id=${clientId}&limit=200`); } catch {}
+  }
+
+  // Conserve tous les filtres actifs dans les liens de pagination.
+  const baseParams = () => {
     const p = new URLSearchParams();
     if (corbeille) p.set("archives", "1");
     if (q) p.set("q", q);
+    if (clientId) p.set("client", clientId);
+    if (projet) p.set("projet", projet);
+    if (statut) p.set("statut", statut);
+    if (type) p.set("type", type);
+    return p;
+  };
+  const lienPage = (nouveauSkip: number) => {
+    const p = baseParams();
     if (nouveauSkip > 0) p.set("skip", String(nouveauSkip));
     const s = p.toString();
     return `/factures${s ? `?${s}` : ""}`;
   };
+  const filtresActifs = !!(clientId || projet || statut || type || q);
 
   return (
     <div>
@@ -114,17 +161,53 @@ export default async function FacturesPage(
         </div>
       )}
 
-      {/* Recherche */}
-      <form method="GET" className="mb-4 flex gap-2">
-        {corbeille && <input type="hidden" name="archives" value="1" />}
-        <input
-          type="search" name="q" defaultValue={q}
-          placeholder="Rechercher (numero, objet)..."
-          className="flex-1 border rounded px-3 py-2 text-sm"
-        />
-        <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Rechercher</button>
-        {q && <Link href={lienPage(0)} className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">Effacer</Link>}
-      </form>
+      {/* Recherche + filtres (masques en corbeille) */}
+      {corbeille ? (
+        <form method="GET" className="mb-4 flex gap-2">
+          <input type="hidden" name="archives" value="1" />
+          <input type="search" name="q" defaultValue={q} placeholder="Rechercher (numero, objet)..."
+            className="flex-1 border rounded px-3 py-2 text-sm" />
+          <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Rechercher</button>
+        </form>
+      ) : (
+        <form method="GET" className="mb-4 flex flex-wrap items-end gap-2">
+          <div className="grow min-w-[180px]">
+            <label className="block text-xs text-gray-400 mb-0.5">Recherche</label>
+            <input type="search" name="q" defaultValue={q} placeholder="Numero, objet..."
+              className="w-full border rounded px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-0.5">Client</label>
+            <select name="client" defaultValue={clientId} className="border rounded px-2 py-2 text-sm">
+              <option value="">Tous les clients</option>
+              {clients.map(c => <option key={c.id} value={c.id}>{c.raison_sociale}</option>)}
+            </select>
+          </div>
+          {clientId && (
+            <div>
+              <label className="block text-xs text-gray-400 mb-0.5">Projet (devis)</label>
+              <select name="projet" defaultValue={projet} className="border rounded px-2 py-2 text-sm">
+                <option value="">Tous les projets</option>
+                {projets.map(p => <option key={p.id} value={p.id}>{p.reference}{p.offre_nom ? ` — ${p.offre_nom}` : ""}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs text-gray-400 mb-0.5">Statut</label>
+            <select name="statut" defaultValue={statut} className="border rounded px-2 py-2 text-sm">
+              {STATUT_FILTRES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-0.5">Type</label>
+            <select name="type" defaultValue={type} className="border rounded px-2 py-2 text-sm">
+              {TYPE_FILTRES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">Filtrer</button>
+          {filtresActifs && <Link href="/factures" className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">Effacer</Link>}
+        </form>
+      )}
 
       {factures.length === 0 ? (
         <div className="bg-white border rounded-lg p-8 text-center">
@@ -154,6 +237,13 @@ export default async function FacturesPage(
                     {f.statut}
                   </span>
                 </div>
+                {f.client && <p className="text-sm font-medium text-gray-800">{f.client}</p>}
+                {f.projet_ref && (
+                  <p className="text-[11px] text-gray-400 mb-1">
+                    Projet : {f.devis_id ? <Link href={`/devis/detail?id=${f.devis_id}`} className="font-mono hover:underline">{f.projet_ref}</Link> : f.projet_ref}
+                    {f.projet_nom ? ` · ${f.projet_nom}` : ""}
+                  </p>
+                )}
                 <p className="text-sm text-gray-600 mb-2">{f.objet}</p>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-400">{f.date_emission}</span>
@@ -213,8 +303,9 @@ export default async function FacturesPage(
               <thead className="bg-gray-50 text-left">
                 <tr>
                   <th className="px-4 py-3 font-medium">Numero</th>
+                  <th className="px-4 py-3 font-medium">Client</th>
+                  <th className="px-4 py-3 font-medium">Projet</th>
                   <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Objet</th>
                   <th className="px-4 py-3 font-medium">Date</th>
                   <th className="px-4 py-3 font-medium text-right">Total TTC</th>
                   <th className="px-4 py-3 font-medium">Statut</th>
@@ -224,14 +315,23 @@ export default async function FacturesPage(
               <tbody className="divide-y">
                 {factures.map(f => (
                   <tr key={f.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono font-medium">
+                    <td className="px-4 py-3 font-mono font-medium align-top">
                       {f.statut === "brouillon" ? (
                         <span className="text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></span>
                       ) : f.numero}
+                      <p className="text-[11px] text-gray-400 font-sans max-w-[220px] truncate">{f.objet}</p>
                     </td>
-                    <td className="px-4 py-3">{TYPE_LABELS[f.type] || f.type}</td>
-                    <td className="px-4 py-3 text-gray-500 max-w-xs truncate">{f.objet}</td>
-                    <td className="px-4 py-3 text-gray-500">{f.date_emission}</td>
+                    <td className="px-4 py-3 align-top">{f.client || "—"}</td>
+                    <td className="px-4 py-3 align-top">
+                      {f.projet_ref ? (
+                        <>
+                          {f.devis_id ? <Link href={`/devis/detail?id=${f.devis_id}`} className="font-mono text-[#1A355E] hover:underline">{f.projet_ref}</Link> : <span className="font-mono">{f.projet_ref}</span>}
+                          {f.projet_nom && <p className="text-[11px] text-gray-400 max-w-[180px] truncate">{f.projet_nom}</p>}
+                        </>
+                      ) : "—"}
+                    </td>
+                    <td className="px-4 py-3 align-top">{TYPE_LABELS[f.type] || f.type}</td>
+                    <td className="px-4 py-3 text-gray-500 align-top">{f.date_emission}</td>
                     <td className="px-4 py-3 text-right font-medium">{eur(f.total_ttc)}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUT_COLORS[f.statut] || "bg-gray-100 text-gray-700"}`}>

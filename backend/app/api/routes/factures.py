@@ -15,7 +15,7 @@ from app.services.facturation_maintenance import devis_maintenance_dus
 from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
-from app.services.email_resend import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
 from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
@@ -283,7 +283,9 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
     """
     if not email_actif():
         raise HTTPException(
-            400, "Envoi email non configure : renseignez RESEND_API_KEY dans backend/.env."
+            400,
+            "Envoi email non configure : renseignez SMTP_USER + SMTP_PASSWORD "
+            "(votre messagerie pro) dans backend/.env.",
         )
 
     facture, devis, societe, buf, filename = await _generer_facture_docx(facture_id, db)
@@ -296,7 +298,9 @@ async def envoyer_facture_email(facture_id: int, db: AsyncSession = Depends(get_
         )
 
     settings = get_settings()
-    expediteur = settings.RESEND_FROM
+    # Expediteur affiche : SMTP_FROM (ou RESEND_FROM) si defini, sinon construit
+    # depuis la societe. Pour le SMTP, l'adresse doit correspondre a SMTP_USER.
+    expediteur = settings.SMTP_FROM or settings.RESEND_FROM
     if not expediteur and societe and societe.email:
         expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
 

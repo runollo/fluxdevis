@@ -30,6 +30,10 @@ from app.services.facturation_maintenance import (
     generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
 )
 from app.services import journal as journal_svc
+from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError
+from app.core.config import get_settings
+
+_DOCX_CT = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 # Reverse de _PLAN_MAP : enum -> libelle ("33/33/33", ...)
 _PLAN_LABEL = {v: k for k, v in {
@@ -988,9 +992,8 @@ async def generer_facture_maintenance_endpoint(
     )
 
 
-@router.get("/{devis_id}/document")
-async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
-    """Genere et retourne le devis au format Word (.docx)."""
+async def _generer_devis_docx(devis_id: int, db: AsyncSession):
+    """Charge le devis et genere son document Word. Renvoie (devis, societe, buf, filename)."""
     result = await db.execute(
         select(Devis)
         .where(Devis.id == devis_id)
@@ -1012,11 +1015,68 @@ async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
                         heures_packs=heures_packs)
     prefixe_nom = "Proposition" if devis.document_type == DOC_PROPOSITION else "Devis"
     filename = f"{prefixe_nom}_{devis.reference}.docx"
+    return devis, societe, buf, filename
+
+
+@router.get("/{devis_id}/document")
+async def telecharger_devis(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Genere et retourne le devis au format Word (.docx)."""
+    _, _, buf, filename = await _generer_devis_docx(devis_id, db)
     return StreamingResponse(
         buf,
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        media_type=_DOCX_CT,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{devis_id}/envoyer")
+async def envoyer_devis_email(devis_id: int, db: AsyncSession = Depends(get_db)):
+    """Envoie le devis (Word en piece jointe) au client par email.
+
+    Utilise le moteur configure (SMTP de la messagerie pro en priorite). Renvoie
+    400 tant qu'aucun moteur n'est configure ou si l'email du client est absent.
+    """
+    if not email_actif():
+        raise HTTPException(
+            400,
+            "Envoi email non configure : renseignez SMTP_USER + SMTP_PASSWORD "
+            "(votre messagerie pro) dans backend/.env.",
+        )
+    devis, societe, buf, filename = await _generer_devis_docx(devis_id, db)
+
+    destinataire = devis.client_email
+    if not destinataire:
+        raise HTTPException(
+            400,
+            "Email client absent du devis : renseignez l'email du client puis recreez le devis.",
+        )
+
+    settings = get_settings()
+    expediteur = settings.SMTP_FROM or settings.RESEND_FROM
+    if not expediteur and societe and societe.email:
+        expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
+
+    marque = (societe.marque or societe.nom) if societe else "FluXweb"
+    contact = devis.client_interlocuteur or "Madame, Monsieur"
+    doc_label = "proposition budgetaire" if devis.document_type == DOC_PROPOSITION else "devis"
+    sujet = f"Votre {doc_label} {devis.reference} - {marque}"
+    html = (
+        f"<p>Bonjour {contact},</p>"
+        f"<p>Veuillez trouver ci-joint votre {doc_label} <strong>{devis.reference}</strong>.</p>"
+        f"<p>Montant : {devis.total_ttc} EUR TTC.</p>"
+        f"<p>Nous restons a votre disposition pour toute question.</p>"
+        f"<p>Cordialement,<br>{marque}</p>"
+    )
+    email = Email(
+        destinataire=destinataire, sujet=sujet, html=html,
+        pieces_jointes=[PieceJointe(filename, buf.getvalue(), _DOCX_CT)],
+        reply_to=(societe.email if societe else None),
+    )
+    try:
+        await envoyer_email(email, expediteur)
+    except EmailError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "destinataire": destinataire}
 
 
 _TVA = Decimal("0.20")

@@ -394,6 +394,17 @@ export async function saveDevis(formData: FormData) {
 }
 
 
+export async function envoyerDevis(formData: FormData) {
+  const id = formData.get("devis_id") as string;
+  if (!id) redirect("/devis");
+  try {
+    await serverPost(`/devis/${id}/envoyer`, {});
+  } catch (e) {
+    redirect(ajouterParam(`/devis/detail?id=${id}`, "suppr_msg", extraireDetail(e)));
+  }
+  redirect(ajouterParam(`/devis/detail?id=${id}`, "devis_envoye", "1"));
+}
+
 export async function emettreFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";

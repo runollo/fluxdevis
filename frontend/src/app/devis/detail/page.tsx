@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, emettreFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, emettreFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel, envoyerDevis } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -125,7 +125,7 @@ function libelleChamp(c: string): string {
   return map[c] || c;
 }
 
-export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string; maj?: string; doc_msg?: string }> }) {
+export default async function DevisDetailPage({ searchParams }: { searchParams: Promise<{ id?: string; erreur?: string; maint_erreur?: string; suppr_msg?: string; envoye?: string; devis_envoye?: string; maj?: string; doc_msg?: string }> }) {
   const params = await searchParams;
   const id = params.id;
   let d: DevisDetail | null = null;
@@ -185,6 +185,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
         </div>
       )}
 
+      {params.devis_envoye === "1" && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          Devis envoye par email au client.
+        </div>
+      )}
+
       {params.maj === "1" && (
         <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">
           Modification enregistree (tracee dans l&apos;historique).
@@ -228,6 +234,18 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           className="px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium text-center">
           Telecharger le devis (Word)
         </a>
+        {d.client_email ? (
+          <form action={envoyerDevis}>
+            <input type="hidden" name="devis_id" value={d.id} />
+            <button type="submit" className="w-full px-4 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
+              Envoyer au client ({d.client_email})
+            </button>
+          </form>
+        ) : (
+          <span className="px-4 py-2 text-xs text-gray-400 text-center">
+            Renseignez l&apos;email du client pour pouvoir l&apos;envoyer
+          </span>
+        )}
         {d.factures.length === 0 && (
           <form action={genererFactures}>
             <input type="hidden" name="devis_id" value={d.id} />

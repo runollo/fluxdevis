@@ -41,9 +41,10 @@ Derniers commits (les plus recents en haut) :
 - `ad783de` / anterieurs : phase Shopify (devis + factures). Cf. "Phase Shopify".
 
 RESTE / OPTIONNEL (pas de dependance, a faire quand utile) :
-1. Envoi email (Resend) : code prevu mais NON ACTIVE — c'est le SEUL maillon manquant du
-   flux quotidien (aujourd'hui : telechargement Word puis envoi manuel). Bloque sur une
-   decision metier de Bruno (fournisseur ? PDF vs Word ?). Cf. "Envoi email (Resend)".
+1. Envoi email : CODE EN PLACE (moteur SMTP de la messagerie pro, OVH par defaut) pour le
+   DEVIS et les FACTURES. Il ne manque que les identifiants : renseigner SMTP_USER +
+   SMTP_PASSWORD dans backend/.env, puis tester un envoi reel. Cf. "Envoi email (SMTP)".
+   (Eventuel +) sortie PDF au lieu de Word pour la piece jointe.
 2. UI annexe maintenance grand public : l'editeur de contenu de pack existe deja dans
    /catalogue/option ; reste eventuellement une vue de consultation cote client. Confort.
 3. Auth multi-utilisateur (Phase E) : differee (Bruno seul utilisateur).
@@ -446,6 +447,30 @@ Le total reste net du cadeau.
 NB demarrage : `uvicorn` n'est PAS sur le PATH global, il est dans le venv
 (`backend/.venv/bin/uvicorn`). Alembic doit etre lance avec `PYTHONPATH=.` depuis `backend/`
 (`PYTHONPATH=. ./.venv/bin/alembic upgrade head`), sinon `ModuleNotFoundError: No module named 'app'`.
+
+### Envoi email (SMTP de la messagerie pro) — devis + factures (fait 2026-06-10) CODE PRET
+Decision Bruno : pas de service tiers type Resend ; envoi via le SMTP de sa propre
+messagerie pro (OVH), depuis contact@fluxweb.fr. Resend reste dispo en repli.
+- Config (`core/config.py` + `backend/.env`) : `SMTP_HOST` (defaut `ssl0.ovh.net`),
+  `SMTP_PORT` (587), `SMTP_STARTTLS` (true), `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
+- Service `app/services/email_smtp.py` : envoi via `smtplib` (EmailMessage multipart
+  texte+HTML + pieces jointes) execute dans un thread (`asyncio.to_thread`) pour ne pas
+  bloquer asyncio. Reutilise `Email`/`PieceJointe`/`EmailError` de `email_resend.py`.
+- Dispatcher `app/services/email.py` : interface unique (`email_actif`, `envoyer_email`)
+  qui choisit SMTP en priorite, sinon Resend, sinon `EmailError`. Les routes importent CE
+  module (plus `email_resend` directement).
+- Factures : `POST /api/factures/{id}/envoyer` (existait, bascule sur le dispatcher).
+- Devis : NOUVEAU `POST /api/devis/{id}/envoyer` (genere le devis Word via le helper
+  `_generer_devis_docx` partage avec le telechargement, l'envoie au `client_email`).
+- Frontend : action `envoyerDevis` + bouton "Envoyer au client (<email>)" sur
+  `/devis/detail` (masque si pas d'email client), bandeau succes `?devis_envoye=1`. Le
+  bouton "Envoyer" des factures (liste + detail) marche desormais aussi.
+- ACTIVATION (reste a faire par Bruno) : mettre SMTP_USER=contact@fluxweb.fr + le mot de
+  passe de la boite dans backend/.env, relancer le backend, tester un envoi reel (vers une
+  adresse de test). Sans identifiants : `email_actif()` = False, l'UI renvoie un 400 clair.
+  NB OVH : le From doit correspondre a la boite authentifiee (SMTP_USER).
+Verifie : import OK, 400 propre quand non configure, bouton affiche, tsc OK. (Envoi reel
+non teste faute d'identifiants.)
 
 ### Filtres de la page Factures : client / projet / statut (fait 2026-06-10) TERMINEE
 Modele : un CLIENT a plusieurs PROJETS, ou un projet = un DEVIS (l'extension d'un site

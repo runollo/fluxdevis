@@ -974,6 +974,57 @@ docs systemd, `e1a5210` mentions obligatoires, `6ef68e8` avoirs.
   garde-fous) : 6 factures (F2026-001 + F2026-005..009) + devis Omnipub (id 18) ; reset
   `compteur_facture[2026]=0`. Backup prealable : `backend/backups/backup_avant_suppression.json`.
 - Devis ASK-VSE conserves (Bruno regenere leurs factures). Voir POINT DE REPRISE pour le plan.
+- Puis Omnipub recree+resupprime (decision finale : non integre) ; backups
+  `backup_omnipub_retire.json` / `backup_menage_omnipub.json`.
+
+### Taux horaire sur les offres (commit `4e630e0`)
+- `Offre.prix_heure` (Numeric 8,4, defaut 27) + `Offre.recalculer_prix()` : le tarif
+  d'achat DECOULE des heures (`tarif_achat = prix_heure * heures`), comme les Options.
+  Le tarif de VENTE conseille reste surchargeable (pas touche par recalculer_prix).
+- Migration `29141829c688` : colonne + backfill `prix_heure = tarif_achat/heures` pour
+  PRESERVER les tarifs existants (taux implicites non entiers, ex 27,59). NB : 2 offres
+  (Serenite 15p, Premium 20p) derivent de -0,01 EUR au prochain re-enregistrement
+  (arrondi 4 decimales), sans impact sur le prix de vente (surcharge a prix rond).
+- routes offres : prix_heure dans Read/Create/Update + recalculer_prix a create/update.
+- frontend `OffreForm.tsx` (Client Component) : champs Heures + Taux horaire pilotent le
+  Tarif achat (calcule en live, lecture seule) ; tarif vente auto/forçable inchange.
+
+### Nomenclature facture/avoir F-XXXX-AAMMJJ-NNN (commit `603d4c0`)
+- Le numero LEGAL (attribue a l'emission) : facture `F-XXXX-AAMMJJ-NNN`, avoir
+  `AV-XXXX-AAMMJJ-NNN`. XXXX = `reference.code_client` (4 lettres) ; AAMMJJ = date
+  d'emission ; NNN = compteur CONTINU par annee. Compteur FACTURE commun a toutes les
+  factures ; AVOIRS = serie dediee (`compteur_avoir`). Devis inchanges.
+- `numerotation_facture.py` reecrit : `format_numero_facture/avoir`,
+  `prochain_compteur_facture/avoir`, `numero_en_cours`. `emettre` + `etablir_avoir`
+  construisent le numero avec le code client (depuis le devis) + date + compteur.
+- Numero PROVISOIRE des brouillons inchange (horodate `F-XXXX-AAMMJJHHMM-N`).
+
+### Facturation de maintenance : 2 corrections (commits `241d824`, `e0cb505`)
+- Date : la facture de maintenance est datee au DEBUT de la periode facturee
+  (anniversaire de mise en ligne), plus a la date de generation
+  (`date_emission=date_echeance=debut`).
+- Archivage : `_nb_factures` (index de periode) EXCLUT desormais les factures archivees
+  (param `actives_seulement`, defaut True) -> archiver une maintenance permet de la
+  regenerer. Le suffixe du numero provisoire compte encore tout (unicite).
+
+### Confirmation avant emission d'une facture (commit `c3b1b8c`)
+- `GET /api/factures/{id}/apercu-emission` : previsualise (sans consommer) le numero
+  provisoire, le numero legal PREVU (compteur+1) et la derniere facture emise de l'annee.
+- Le bouton "Emettre (n° legal)" mene a `/factures/confirmer?action=emettre` (Server
+  Component) qui affiche "la facture <provisoire> va devenir <prevu>, a la suite de
+  <precedente>" + rappel (numero fige, plus de suppression, ordre chronologique) avant
+  de confirmer. Les 3 emplacements du bouton (devis/detail + factures mobile/desktop) y
+  pointent ; l'action `emettreFacture` n'est plus appelee directement.
+
+### Etat ASK-VSE au 2026-06-11 (EN COURS cote Bruno)
+- Devis 16 (FW-RAI-26032511, mise en ligne 26/05/2026) regenere. Factures (dates) :
+  acompte 15/04, acompte 15/05, maintenance 26/05 (periode 26/05->25/06), solde 14/06.
+- 1ere emise : `F-ASKV-260415-001` (marquee payee). Reste a emettre DANS L'ORDRE
+  chronologique : 15/05 -> 26/05 (maintenance) -> 14/06 -> ... puis saisie dans Indy.
+- 2e maintenance (periode 26/06) PAS encore generable (garde-fou periode future) :
+  generable a partir du 26/06. Si reconstitution anticipee necessaire, lever le garde-fou.
+- Devis ASK-VSE doublons 8/9 et devis test LOVINO 17 encore en base (brouillons,
+  sans incidence numerotation) ; menage optionnel.
 
 ---
 

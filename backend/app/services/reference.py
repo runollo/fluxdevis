@@ -65,6 +65,13 @@ def _extract_code(raison_sociale: str) -> str:
     return code.ljust(4, "X")[:4]
 
 
+def code_client(raison_sociale: str) -> str:
+    """Code de 4 lettres derive du nom du client (forme juridique et articles
+    retires, accents/caracteres speciaux supprimes). Mutualise par les references
+    devis et la numerotation legale des factures/avoirs."""
+    return _extract_code(raison_sociale)
+
+
 def generer_reference_devis(
     raison_sociale: str, dt: datetime | None = None, prefixe: str = "D"
 ) -> str:

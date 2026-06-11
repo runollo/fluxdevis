@@ -1,76 +1,69 @@
-"""Numerotation legale des factures : sequence chronologique continue par annee.
+"""Numerotation legale des factures et avoirs : sequence chronologique continue.
 
-Le numero F<annee>-NNN est attribue a l'EMISSION d'une facture (passage du
-brouillon a "emise"), JAMAIS a la creation du brouillon. Un brouillon supprime
-ne consomme donc aucun numero : la sequence reste continue, sans trou, comme
-l'exige l'art. 242 nonies A de l'annexe II au CGI.
+Format du numero LEGAL (attribue a l'EMISSION, jamais au brouillon) :
+  - Facture : F-XXXX-AAMMJJ-NNN   (ex F-ASKV-260415-001)
+  - Avoir   : AV-XXXX-AAMMJJ-NNN  (ex AV-ASKV-260611-001)
 
-Le compteur (table compteur_facture) ne fait qu'augmenter, par annee. NNN est
-zero-padde sur 3 chiffres minimum (F2026-010), et s'etend au-dela si besoin.
+  XXXX   = code 4 lettres du client (cf reference.code_client)
+  AAMMJJ = date d'emission
+  NNN    = compteur incremental CONTINU par annee (3 chiffres min), qui ne fait
+           qu'augmenter -> sequence sans trou, comme l'exige l'art. 242 nonies A
+           de l'annexe II au CGI. Le compteur FACTURE est commun a toutes les
+           factures (acompte, solde, maintenance, prestation...). Les AVOIRS ont
+           leur propre serie continue dediee (table compteur_avoir).
+
+Un brouillon (numero provisoire horodate F-XXXX-AAMMJJHHMM-N) ne consomme aucun
+numero : la sequence legale reste continue meme si un brouillon est supprime.
 """
 
+from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def format_numero(annee: int, n: int) -> str:
-    """Formate le numero legal : F<annee>-NNN (3 chiffres min)."""
-    return f"F{annee}-{n:03d}"
+def format_numero_facture(code: str, dt: date, n: int) -> str:
+    """Numero legal de facture : F-XXXX-AAMMJJ-NNN (NNN sur 3 chiffres min)."""
+    return f"F-{code}-{dt.strftime('%y%m%d')}-{n:03d}"
 
 
-async def prochain_numero(db: AsyncSession, annee: int) -> str:
-    """Incremente atomiquement le compteur de l'annee et renvoie le numero legal.
+def format_numero_avoir(code: str, dt: date, n: int) -> str:
+    """Numero d'avoir : AV-XXXX-AAMMJJ-NNN (NNN sur 3 chiffres min)."""
+    return f"AV-{code}-{dt.strftime('%y%m%d')}-{n:03d}"
 
-    UPSERT atomique : si l'annee n'existe pas encore, elle est creee a 1 ;
-    sinon `dernier` est incremente. Le RETURNING garantit qu'aucun appel
-    concurrent ne recoit le meme numero (verrou de ligne PostgreSQL).
+
+async def prochain_compteur_facture(db: AsyncSession, annee: int) -> int:
+    """Increment atomique du compteur de factures de l'annee, renvoie le numero brut.
+
+    UPSERT atomique (RETURNING) : aucun appel concurrent ne recoit le meme numero.
     """
     row = await db.execute(
         text(
-            """
-            INSERT INTO compteur_facture (annee, dernier)
-            VALUES (:annee, 1)
-            ON CONFLICT (annee)
-            DO UPDATE SET dernier = compteur_facture.dernier + 1
-            RETURNING dernier
-            """
+            "INSERT INTO compteur_facture (annee, dernier) VALUES (:annee, 1) "
+            "ON CONFLICT (annee) DO UPDATE SET dernier = compteur_facture.dernier + 1 "
+            "RETURNING dernier"
         ),
         {"annee": annee},
     )
-    n = row.scalar_one()
-    return format_numero(annee, n)
+    return row.scalar_one()
+
+
+async def prochain_compteur_avoir(db: AsyncSession, annee: int) -> int:
+    """Increment atomique du compteur d'avoirs de l'annee (serie dediee continue)."""
+    row = await db.execute(
+        text(
+            "INSERT INTO compteur_avoir (annee, dernier) VALUES (:annee, 1) "
+            "ON CONFLICT (annee) DO UPDATE SET dernier = compteur_avoir.dernier + 1 "
+            "RETURNING dernier"
+        ),
+        {"annee": annee},
+    )
+    return row.scalar_one()
 
 
 async def numero_en_cours(db: AsyncSession, annee: int) -> int:
-    """Renvoie le dernier numero attribue pour l'annee (0 si aucun). Lecture seule."""
+    """Dernier compteur de facture attribue pour l'annee (0 si aucun). Lecture seule."""
     row = await db.execute(
         text("SELECT dernier FROM compteur_facture WHERE annee = :annee"),
         {"annee": annee},
     )
     return row.scalar_one_or_none() or 0
-
-
-def format_numero_avoir(annee: int, n: int) -> str:
-    """Formate le numero d'avoir : AV<annee>-NNN (3 chiffres min)."""
-    return f"AV{annee}-{n:03d}"
-
-
-async def prochain_numero_avoir(db: AsyncSession, annee: int) -> str:
-    """Increment atomique du compteur d'avoirs de l'annee, renvoie AV<annee>-NNN.
-
-    Sequence distincte des factures (table compteur_avoir).
-    """
-    row = await db.execute(
-        text(
-            """
-            INSERT INTO compteur_avoir (annee, dernier)
-            VALUES (:annee, 1)
-            ON CONFLICT (annee)
-            DO UPDATE SET dernier = compteur_avoir.dernier + 1
-            RETURNING dernier
-            """
-        ),
-        {"annee": annee},
-    )
-    n = row.scalar_one()
-    return format_numero_avoir(annee, n)

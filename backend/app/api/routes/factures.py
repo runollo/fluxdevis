@@ -12,7 +12,11 @@ from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
-from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero, prochain_numero_avoir
+from app.services.numerotation_facture import (
+    prochain_compteur_facture, prochain_compteur_avoir,
+    format_numero_facture, format_numero_avoir, numero_en_cours,
+)
+from app.services.reference import code_client
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
@@ -184,7 +188,12 @@ async def next_numero(db: AsyncSession = Depends(get_db)):
     """
     year = date.today().year
     n = await numero_en_cours(db, year)
-    return {"numero": format_numero(year, n + 1)}
+    today = date.today()
+    # Apercu : le code client depend de la facture, fixe ici a XXXX (preview global).
+    return {
+        "compteur": n + 1,
+        "exemple": format_numero_facture("XXXX", today, n + 1),
+    }
 
 
 @router.get("/{facture_id}", response_model=FactureSummary)
@@ -504,7 +513,10 @@ async def emettre_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
 
     annee = facture.date_emission.year
     ancien = facture.numero
-    facture.numero = await prochain_numero(db, annee)
+    devis = await db.get(Devis, facture.devis_id)
+    code = code_client(devis.client_raison_sociale) if devis else "XXXX"
+    n = await prochain_compteur_facture(db, annee)
+    facture.numero = format_numero_facture(code, facture.date_emission, n)
     facture.statut = StatutFacture.EMISE
     journal_svc.enregistrer(
         db, "facture", facture.id, "emission",
@@ -554,7 +566,10 @@ async def etablir_avoir(
         raise HTTPException(400, f"Un avoir existe deja pour cette facture ({deja.numero})")
 
     today = date.today()
-    numero = await prochain_numero_avoir(db, today.year)
+    devis_origine = await db.get(Devis, facture.devis_id)
+    code = code_client(devis_origine.client_raison_sociale) if devis_origine else "XXXX"
+    n = await prochain_compteur_avoir(db, today.year)
+    numero = format_numero_avoir(code, today, n)
     motif = (data.motif or "").strip() or "Annulation de la facture"
     objet = f"Avoir sur facture {facture.numero} — {motif}"
 

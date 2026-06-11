@@ -43,6 +43,38 @@ alembic upgrade head
 
 ---
 
+## Deploiement (services systemd)
+
+En production locale (serveur 192.168.1.30), le backend et le frontend tournent
+comme services **systemd utilisateur** (compte `ullop`, `Linger=yes`), pour un
+redemarrage automatique au boot et apres crash. PostgreSQL est un service systeme
+deja active au boot.
+
+| Service | Role | Port |
+|---|---|---|
+| `fluxdevis-backend.service`  | API FastAPI (uvicorn, bind 127.0.0.1) | 8000 |
+| `fluxdevis-frontend.service` | Next.js (mode dev, port fige)         | 3001 |
+
+Fichiers : `~/.config/systemd/user/fluxdevis-{backend,frontend}.service`.
+Adresse d'acces : **http://192.168.1.30:3001** (le 3000 est occupe par openclaw-control).
+
+```bash
+# Etat / logs
+systemctl --user status fluxdevis-backend fluxdevis-frontend
+journalctl --user -u fluxdevis-frontend -f
+
+# Redemarrer apres une mise a jour de code
+systemctl --user restart fluxdevis-frontend
+
+# Apres modification d'un fichier .service
+systemctl --user daemon-reload && systemctl --user restart fluxdevis-backend
+```
+
+Important : ne jamais lancer le front/back en avant-plan dans un terminal pour la
+prod — la fermeture du terminal tue le process. Toujours passer par systemd.
+
+---
+
 ## Structure du projet
 
 ```

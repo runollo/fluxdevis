@@ -74,10 +74,17 @@ def montant_recurrent_ht(devis: Devis) -> Decimal:
     return net if net > 0 else Decimal("0")
 
 
-async def _nb_factures(db: AsyncSession, devis_id: int, type_facture=None) -> int:
+async def _nb_factures(
+    db: AsyncSession, devis_id: int, type_facture=None, actives_seulement: bool = True
+) -> int:
     query = select(func.count()).select_from(Facture).where(Facture.devis_id == devis_id)
     if type_facture is not None:
         query = query.where(Facture.type == type_facture)
+    # Les factures archivees (corbeille) ne comptent pas dans l'index de periode :
+    # archiver une maintenance doit permettre de la regenerer (coherent avec
+    # l'idempotence des factures d'acompte).
+    if actives_seulement:
+        query = query.where(Facture.archived_at.is_(None))
     return (await db.execute(query)).scalar() or 0
 
 
@@ -137,8 +144,8 @@ async def generer_facture_maintenance(
 
     tva = _q(ht * TVA)
     ttc = ht + tva
-    # Suffixe de numero base sur le total des factures du devis (unicite)
-    total_factures = await _nb_factures(db, devis.id)
+    # Suffixe de numero provisoire base sur le total (archivees incluses) -> unicite
+    total_factures = await _nb_factures(db, devis.id, actives_seulement=False)
     numero = generer_reference_facture(devis.client_raison_sociale, num_facture=total_factures + 1)
     # Wording aligne sur le recap du devis : pour Shopify l'hebergement est porte
     # par la plateforme (abonnement a la charge du client), donc "exploitation"

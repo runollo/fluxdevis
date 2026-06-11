@@ -158,8 +158,11 @@ async def generer_facture_maintenance(
         type=TypeFacture.MAINTENANCE,
         statut=StatutFacture.BROUILLON,
         devis_id=devis.id,
-        date_emission=today,
-        date_echeance=today,
+        # Facture d'abonnement : datee au DEBUT de la periode facturee (anniversaire
+        # de mise en ligne), pas a la date de generation. Paiement du au terme a
+        # echoir -> echeance = debut de periode.
+        date_emission=debut,
+        date_echeance=debut,
         periode_debut=debut,
         periode_fin=fin,
         objet=objet,

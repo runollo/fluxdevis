@@ -34,6 +34,9 @@ class FactureData:
         self.type_facture: str = kwargs.get("type_facture", "acompte")
         self.date_emission: date = kwargs.get("date_emission", date.today())
         self.date_echeance: date = kwargs.get("date_echeance", date.today())
+        # Date de versement de l'acompte / du solde (mention obligatoire : date de
+        # la prestation ou date de versement de l'acompte). None pour la maintenance.
+        self.date_acompte: date | None = kwargs.get("date_acompte")
         self.objet: str = kwargs.get("objet", "")
 
         # Emetteur
@@ -56,6 +59,7 @@ class FactureData:
         self.client_adresse: str = kwargs.get("client_adresse", "")
         self.client_cp_ville: str = kwargs.get("client_cp_ville", "")
         self.client_siret: str = kwargs.get("client_siret", "")
+        self.client_tva_num: str = kwargs.get("client_tva_num", "")
         self.client_email: str = kwargs.get("client_email", "")
 
         # Lignes
@@ -137,8 +141,12 @@ def _add_emetteur_meta(doc, data):
     meta = [
         ("Facture n\u00b0", data.numero),
         ("Date d\u2019\u00e9mission", data.date_emission.strftime("%d/%m/%Y")),
-        ("Date d\u2019\u00e9ch\u00e9ance", data.date_echeance.strftime("%d/%m/%Y")),
     ]
+    # Mention obligatoire : date de la prestation ou date de versement de l'acompte.
+    if data.date_acompte and data.type_facture in ("acompte", "solde"):
+        label_versement = "Date du solde" if data.type_facture == "solde" else "Date de l\u2019acompte"
+        meta.append((label_versement, data.date_acompte.strftime("%d/%m/%Y")))
+    meta.append(("Date d\u2019\u00e9ch\u00e9ance", data.date_echeance.strftime("%d/%m/%Y")))
     if data.periode:
         meta.append(("P\u00e9riode", data.periode))
     add_emetteur_meta(doc, emetteur_lines, meta)
@@ -152,6 +160,7 @@ def _add_client_objet(doc, data):
         data.client_adresse,
         cp_ville,
         f"SIRET : {data.client_siret}" if data.client_siret else "",
+        f"TVA : {data.client_tva_num}" if data.client_tva_num else "",
     ])
     spacer(doc, 4)
     add_objet(doc, data.objet)
@@ -247,8 +256,11 @@ def _add_mentions(doc, data):
     hline(doc)
     mentions = [
         f"R\u00e8glement par virement bancaire : IBAN {data.emetteur_iban} \u2014 BIC {data.emetteur_bic}",
-        "En cas de retard de paiement, une p\u00e9nalit\u00e9 de 3 fois le taux d\u2019int\u00e9r\u00eat l\u00e9gal sera appliqu\u00e9e.",
-        "Indemnit\u00e9 forfaitaire pour frais de recouvrement : 40,00 \u20ac.",
+        "En cas de retard de paiement, des p\u00e9nalit\u00e9s seront exigibles de plein droit, "
+        "sans rappel pr\u00e9alable, au taux annuel de trois (3) fois le taux d\u2019int\u00e9r\u00eat "
+        "l\u00e9gal en vigueur.",
+        "Conform\u00e9ment aux articles L.441-10 et D.441-5 du Code de commerce, une "
+        "indemnit\u00e9 forfaitaire de 40 \u20ac pour frais de recouvrement est due de plein droit.",
         "Pas d\u2019escompte pour paiement anticip\u00e9.",
     ]
     if data.type_facture == "maintenance":

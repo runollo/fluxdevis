@@ -103,6 +103,9 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
     client_telephone: Mapped[str | None] = mapped_column(String(30))
     client_email: Mapped[str | None] = mapped_column(String(200))
     client_siret: Mapped[str | None] = mapped_column(String(20))
+    # N° TVA intracom du client (mention obligatoire si client pro redevable,
+    # art. 242 nonies A CGI). Fige au moment du devis comme les autres infos client.
+    client_tva_intracom: Mapped[str | None] = mapped_column(String(20))
 
     # Offre (FK + snapshot)
     offre_id: Mapped[int] = mapped_column(ForeignKey("offres.id"))

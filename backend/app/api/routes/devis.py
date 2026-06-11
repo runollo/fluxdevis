@@ -607,6 +607,7 @@ def _appliquer_champs(devis: Devis, data: "DevisCreateRequest", client, offre, m
     devis.client_telephone = client.telephone
     devis.client_email = client.email
     devis.client_siret = client.siret
+    devis.client_tva_intracom = client.tva_intracom
     devis.offre_id = offre.id
     devis.offre_nom = offre.nom
     devis.offre_type_site = offre.type_site
@@ -1274,6 +1275,7 @@ async def create_devis(data: DevisCreateRequest, db: AsyncSession = Depends(get_
         client_telephone=client.telephone,
         client_email=client.email,
         client_siret=client.siret,
+        client_tva_intracom=client.tva_intracom,
         # Snapshot offre
         offre_id=offre.id,
         offre_nom=offre.nom,

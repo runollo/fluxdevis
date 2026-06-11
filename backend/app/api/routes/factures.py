@@ -229,11 +229,18 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     if facture.type == TypeFacture.MAINTENANCE and facture.periode_debut and facture.periode_fin:
         periode = f"{facture.periode_debut.strftime('%d/%m/%Y')} au {facture.periode_fin.strftime('%d/%m/%Y')}"
 
+    # Date de versement de l'acompte/solde (mention obligatoire) : date de
+    # paiement effective si reglee, sinon la date d'exigibilite du versement.
+    date_acompte = None
+    if facture.type in (TypeFacture.ACOMPTE, TypeFacture.SOLDE):
+        date_acompte = facture.date_paiement or facture.date_echeance
+
     data = FactureData(
         numero=facture.numero,
         type_facture=facture.type.value,
         date_emission=facture.date_emission,
         date_echeance=facture.date_echeance,
+        date_acompte=date_acompte,
         objet=facture.objet,
         emetteur_nom=societe.nom if societe else "BLUELINK INNOVATIONS",
         emetteur_forme=societe.forme_juridique if societe else "",
@@ -252,6 +259,7 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
         client_adresse=devis.client_adresse if devis else "",
         client_cp_ville=cp_ville,
         client_siret=devis.client_siret if devis else "",
+        client_tva_num=(devis.client_tva_intracom if devis else "") or "",
         designation=facture.objet,
         quantite="1",
         prix_unitaire_ht=facture.total_ht,

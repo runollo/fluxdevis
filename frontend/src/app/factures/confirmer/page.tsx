@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { archiverFacture, annulerFacture, supprimerFactureDefinitif } from "@/lib/actions";
+import { archiverFacture, annulerFacture, supprimerFactureDefinitif, emettreFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -12,19 +12,30 @@ interface FactureSummary {
   id: number; numero: string; type: string; statut: string; objet: string; total_ttc: string;
 }
 
+interface ApercuEmission {
+  provisoire: string; numero_prevu: string; compteur: number;
+  precedente: string | null; date_emission: string;
+}
+
 export default async function ConfirmerFacturePage(
   { searchParams }: { searchParams: Promise<{ id?: string; action?: string; retour?: string; err?: string }> }
 ) {
   const params = await searchParams;
   const id = params.id;
   const action = params.action === "annuler" ? "annuler"
-    : params.action === "definitif" ? "definitif" : "archiver";
+    : params.action === "definitif" ? "definitif"
+    : params.action === "emettre" ? "emettre" : "archiver";
   const retour = params.retour
     || (action === "definitif" ? "/factures?archives=1" : "/factures");
 
   let f: FactureSummary | null = null;
   if (id) {
     try { f = await serverFetch<FactureSummary>(`/factures/${id}`); } catch {}
+  }
+
+  let apercu: ApercuEmission | null = null;
+  if (action === "emettre" && id) {
+    try { apercu = await serverFetch<ApercuEmission>(`/factures/${id}/apercu-emission`); } catch {}
   }
 
   if (!id || !f) {
@@ -43,6 +54,7 @@ export default async function ConfirmerFacturePage(
 
   const titre = action === "annuler" ? "Etablir un avoir d'annulation ?"
     : action === "definitif" ? "Supprimer definitivement cette facture ?"
+    : action === "emettre" ? "Emettre cette facture (numero legal) ?"
     : "Mettre cette facture a la corbeille ?";
 
   return (
@@ -66,6 +78,33 @@ export default async function ConfirmerFacturePage(
         )}
         {errApi && (
           <div className="mb-3 rounded border border-red-200 bg-red-50 p-2 text-sm text-red-700">{errApi}</div>
+        )}
+
+        {action === "emettre" && (
+          <>
+            <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800 mb-4">
+              La facture en brouillon{" "}
+              <strong className="font-mono">{apercu?.provisoire ?? f.numero}</strong> va recevoir
+              son numero legal definitif{" "}
+              <strong className="font-mono">{apercu?.numero_prevu ?? "…"}</strong>
+              {apercu?.precedente
+                ? <> , a la suite de <strong className="font-mono">{apercu.precedente}</strong></>
+                : <> (1<sup>ere</sup> facture de la serie)</>}.
+              <p className="mt-2 text-green-900">
+                Une fois emise, ce numero est <strong>fige</strong>{" "}et la facture ne pourra plus
+                etre supprimee (seulement annulee par un avoir). Emets bien tes factures dans
+                l&apos;ordre chronologique.
+              </p>
+            </div>
+            <form action={emettreFacture} className="flex gap-2">
+              <input type="hidden" name="facture_id" value={f.id} />
+              <input type="hidden" name="retour" value={retour} />
+              <button type="submit" className="px-4 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                Emettre {apercu?.numero_prevu ?? ""}
+              </button>
+              <Link href={retour} className="px-4 py-2 border border-gray-300 text-gray-700 rounded text-sm font-medium">Annuler</Link>
+            </form>
+          </>
         )}
 
         {action === "archiver" && (

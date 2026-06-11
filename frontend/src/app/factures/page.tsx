@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { restaurerFacture, envoyerFacture, emettreFacture, marquerPayee, marquerImpayee, relancerFacture } from "@/lib/actions";
+import { restaurerFacture, envoyerFacture, marquerPayee, marquerImpayee, relancerFacture } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -307,13 +307,10 @@ export default async function FacturesPage(
                 ) : (
                   <div className="mt-3 flex flex-col gap-2">
                     {f.statut === "brouillon" && (
-                      <form action={emettreFacture}>
-                        <input type="hidden" name="facture_id" value={f.id} />
-                        <input type="hidden" name="retour" value="/factures" />
-                        <button type="submit" className="block w-full text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
-                          Émettre (n° légal)
-                        </button>
-                      </form>
+                      <Link href={`/factures/confirmer?id=${f.id}&action=emettre`}
+                        className="block w-full text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                        Émettre (n° légal)
+                      </Link>
                     )}
                     <a href={`/api/factures/${f.id}/document`} className="block w-full text-center px-3 py-2 border border-[#1A355E] text-[#1A355E] rounded text-sm font-medium">
                       Telecharger (PDF)
@@ -473,11 +470,8 @@ export default async function FacturesPage(
                       ) : (
                         <>
                           {f.statut === "brouillon" && (
-                            <form action={emettreFacture} className="inline">
-                              <input type="hidden" name="facture_id" value={f.id} />
-                              <input type="hidden" name="retour" value="/factures" />
-                              <button type="submit" className="mr-3 bg-green-700 text-white px-2 py-1 rounded text-xs font-medium">Émettre (n° légal)</button>
-                            </form>
+                            <Link href={`/factures/confirmer?id=${f.id}&action=emettre`}
+                              className="mr-3 inline-block bg-green-700 text-white px-2 py-1 rounded text-xs font-medium">Émettre (n° légal)</Link>
                           )}
                           <a href={`/api/factures/${f.id}/document`} className="text-[#1A355E] hover:underline font-medium">
                             Telecharger

@@ -1,5 +1,5 @@
 import { serverFetch } from "@/lib/api";
-import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, emettreFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel, envoyerDevis } from "@/lib/actions";
+import { genererFactures, changerStatut, definirMiseEnLigne, genererFactureMaintenance, envoyerFacture, modifierReferenceDevis, modifierDatesDevis, modifierEcheancier, convertirDocumentType, uploaderDocument, modifierDocument, supprimerDocument, restaurerDocument, definirDocumentOfficiel, envoyerDevis } from "@/lib/actions";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -577,11 +577,8 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                 <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-medium">{eur(f.total_ttc)}</span>
                   {f.statut === "brouillon" && (
-                    <form action={emettreFacture} className="inline">
-                      <input type="hidden" name="facture_id" value={f.id} />
-                      <input type="hidden" name="retour" value={`/devis/detail?id=${d.id}`} />
-                      <button type="submit" className="bg-green-700 text-white text-xs px-2 py-1 rounded font-medium">Émettre (n° légal)</button>
-                    </form>
+                    <Link href={`/factures/confirmer?id=${f.id}&action=emettre&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
+                      className="bg-green-700 text-white text-xs px-2 py-1 rounded font-medium">Émettre (n° légal)</Link>
                   )}
                   <Link href={`/factures/editer?id=${f.id}&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
                     className="text-[#1A355E] hover:underline text-sm font-medium">Modifier</Link>

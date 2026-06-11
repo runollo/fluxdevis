@@ -528,6 +528,49 @@ async def emettre_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
     return facture
 
 
+@router.get("/{facture_id}/apercu-emission")
+async def apercu_emission(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """Previsualise l'emission d'une facture brouillon SANS rien consommer :
+    numero provisoire actuel, numero legal qui SERA attribue, et facture
+    precedente de la sequence (pour le rappel de continuite a la confirmation)."""
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut != StatutFacture.BROUILLON:
+        raise HTTPException(400, "Cette facture est deja emise")
+
+    devis = await db.get(Devis, facture.devis_id)
+    code = code_client(devis.client_raison_sociale) if devis else "XXXX"
+    annee = facture.date_emission.year
+    n = await numero_en_cours(db, annee)
+    numero_prevu = format_numero_facture(code, facture.date_emission, n + 1)
+
+    # Facture precedente = derniere emise de l'annee (plus grand compteur NNN).
+    emises = (await db.execute(
+        select(Facture).where(
+            Facture.statut != StatutFacture.BROUILLON,
+            Facture.type != TypeFacture.AVOIR,
+            Facture.archived_at.is_(None),
+            func.extract("year", Facture.date_emission) == annee,
+        )
+    )).scalars().all()
+
+    def _compteur(f) -> int:
+        try:
+            return int(f.numero.rsplit("-", 1)[-1])
+        except (ValueError, IndexError):
+            return -1
+
+    precedente = max(emises, key=_compteur, default=None)
+    return {
+        "provisoire": facture.numero,
+        "numero_prevu": numero_prevu,
+        "compteur": n + 1,
+        "precedente": precedente.numero if precedente else None,
+        "date_emission": facture.date_emission.strftime("%d/%m/%Y"),
+    }
+
+
 class AvoirRequest(BaseModel):
     motif: str | None = None
 

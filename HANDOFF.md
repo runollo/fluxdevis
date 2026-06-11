@@ -36,23 +36,32 @@ PLAT de la serie 2026. Detail complet : section "Session 2026-06-11 (detail)". E
    passe l'origine en ANNULEE. Frontend : "Etablir un avoir" (ex bouton "Annuler") avec
    MOTIF obligatoire (figure sur la piece). Migration `343c273b35c3`.
 
-5. REMISE A PLAT DE LA SERIE 2026 (EN COURS cote Bruno au 2026-06-11) :
-   - TOUTES les factures 2026 ont ete SUPPRIMEES (Omnipub F2026-001 + ASK-VSE F2026-005..009),
-     le DEVIS Omnipub supprime (devis ASK-VSE CONSERVES), compteur facture 2026 REMIS A 0.
-   - Backup JSON des donnees supprimees : `backend/backups/backup_avant_suppression.json`
-     (hors git, restaurable). Le compteur_avoir est vierge -> 1er avoir = AV2026-001.
-   - RAISON : le devis Omnipub genere ne correspondait pas au devis reellement envoye ; et
-     la facture Omnipub avait ete etablie pour une demande de pret bancaire (non obtenu),
-     le site etant finalement OFFERT -> a regulariser proprement par un avoir.
-   - PLAN BRUNO (en cours) : (a) recreer le devis Omnipub conforme -> (b) emettre la facture
-     d'acompte = F2026-001 -> (c) etablir l'avoir = AV2026-001 -> (d) regenerer les factures
-     ASK-VSE dans l'ordre (F2026-002...). VIGILANCE TVA : la TVA d'avril (Omnipub) et les
-     periodes ASK-VSE sont DEJA DECLAREES -> reprendre les MEMES dates et montants lors de
-     la regeneration pour que les declarations restent coherentes.
+5. REMISE A PLAT 2026 + NOUVELLE NOMENCLATURE (EN COURS cote Bruno au 2026-06-11) :
+   - TOUTES les factures 2026 ont ete SUPPRIMEES et OMNIPUB EST RETIRE de FluxDevis
+     (devis + facture supprimes). Compteur facture 2026 REMIS A 0, compteur_avoir vierge.
+     Devis ASK-VSE CONSERVES. Backups : `backend/backups/backup_*.json` (hors git).
+   - DECISION OMNIPUB (finale) : on N'INTEGRE PAS Omnipub dans FluxDevis. La facture
+     Omnipub n'a JAMAIS ete saisie en compta (Indy) ni declaree (TVA) : c'etait un document
+     Excel etabli pour une demande de pret bancaire (refusee), le site etant finalement
+     OFFERT. Aucune vente, aucune TVA -> rien a declarer. Bruno assume de ne pas la tracer
+     dans FluxDevis (arbitrage de risque : une copie existe a la banque d'Omnipub). Averti
+     du point "facture remise a un tiers".
+   - NOUVELLE NOMENCLATURE adoptee (commit `603d4c0`) : puisque Omnipub n'est plus la
+     reference, on abandonne le format `F2026-NNN` (calque sur Omnipub) au profit de la
+     nomenclature native FluxDevis :
+       * Facture (numero LEGAL a l'emission) : **F-XXXX-AAMMJJ-NNN** (ex F-ASKV-260415-001)
+       * Avoir : **AV-XXXX-AAMMJJ-NNN** (serie dediee continue)
+       * XXXX = code client 4 lettres (reference.code_client) ; AAMMJJ = date d'emission ;
+         NNN = compteur CONTINU par annee (commun a TOUTES les factures : acompte/solde/
+         maintenance/prestation -> sequence sans trou). Devis inchanges (D-XXXX-AAMMJJHHMM).
+   - RESTE A FAIRE cote Bruno : REGENERER les factures ASK-VSE (devis 16, FW-RAI-26032511)
+     dans l'ordre -> 1ere emise = F-ASKV-260415-001, etc. ASK-VSE n'est PAS encore dans Indy
+     (Bruno attend de les generer proprement ici avant de les saisir) -> reprendre les vraies
+     dates/montants des periodes correspondantes.
 
    /!\ Les sections anterieures du HANDOFF (import historique "F2026-001..009", "compteur a
-   9", "prochaine = F2026-010") sont OBSOLETES depuis cette remise a plat. La serie 2026 est
-   repartie de zero.
+   9", "F2026-NNN") sont OBSOLETES : la serie 2026 repart de zero avec la nomenclature
+   F-XXXX-AAMMJJ-NNN.
 
 ---
 

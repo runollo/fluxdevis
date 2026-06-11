@@ -1,13 +1,13 @@
 "use client";
 
 // Formulaire d'edition d'une offre du catalogue avec APERCU EN TEMPS REEL de la
-// tarification et de la marge. Permet de piloter le prix de vente conseille selon
-// le tarif d'achat, le taux de marge et la commission apporteur.
+// tarification et de la marge.
 //
-// Relation tarifaire (comme l'import du catalogue) :
+// Relations tarifaires (comme les Options du catalogue) :
+//   tarif_achat          = heures * prix_heure          (CALCULE, non saisi)
 //   tarif_vente_theorique = tarif_achat * (1 + taux_marge)
-// Le tarif_vente_conseille reste saisissable (on peut s'ecarter du theorique) ;
-// l'apercu montre alors la marge reelle obtenue sur le prix saisi.
+// Le tarif_vente_conseille reste saisissable (on peut s'ecarter du theorique a un
+// prix rond) ; l'apercu montre alors la marge reelle obtenue sur le prix saisi.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -20,28 +20,31 @@ function eur(v: number) {
 function N(v: string) { return Number(v || 0); }
 
 export default function OffreForm({ offre }: { offre: Offre | null }) {
-  const [tarifAchat, setTarifAchat] = useState(String(offre?.tarif_achat ?? "0"));
+  const [heures, setHeures] = useState(String(offre?.heures ?? "0"));
+  const [prixHeure, setPrixHeure] = useState(String(offre?.prix_heure ?? "27"));
   const [tauxMarge, setTauxMarge] = useState(String(offre?.taux_marge ?? "0.30"));
   const [venteConseille, setVenteConseille] = useState(String(offre?.tarif_vente_conseille ?? "0"));
   const [commission, setCommission] = useState(String(offre?.commission_apporteur ?? "0"));
 
+  // Tarif achat CALCULE : heures * taux horaire.
+  const achat = N(heures) * N(prixHeure);
+  const venteTheorique = achat * (1 + N(tauxMarge));
+
   // Tarif conseille = achat x (1 + marge) AUTO, mais surchargeable : des que
-  // l'utilisateur saisit un prix a la main (prix rond), sa valeur est respectee
-  // et n'est plus ecrasee par le recalcul. Si l'offre chargee a deja un prix
-  // qui s'ecarte du theorique, on demarre en mode "force" pour ne pas l'ecraser.
-  const achatInit = N(String(offre?.tarif_achat ?? "0"));
-  const theoriqueInit = achatInit * (1 + N(String(offre?.taux_marge ?? "0.30")));
+  // l'utilisateur saisit un prix a la main (prix rond), sa valeur est respectee.
+  // Si l'offre chargee a deja un prix qui s'ecarte du theorique (base sur le tarif
+  // d'achat STOCKE), on demarre en mode "force" pour ne pas l'ecraser.
+  const achatStocke = N(String(offre?.tarif_achat ?? "0"));
+  const theoriqueInit = achatStocke * (1 + N(String(offre?.taux_marge ?? "0.30")));
   const [manuel, setManuel] = useState(
     !!offre && Math.abs(N(String(offre.tarif_vente_conseille ?? "0")) - theoriqueInit) > 0.01
   );
-  const achat = N(tarifAchat);
-  const venteTheorique = achat * (1 + N(tauxMarge));
 
   // Recalcul auto du conseille tant que l'utilisateur ne l'a pas force.
   useEffect(() => {
     if (!manuel) setVenteConseille(venteTheorique.toFixed(2));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tarifAchat, tauxMarge, manuel]);
+  }, [heures, prixHeure, tauxMarge, manuel]);
 
   const vente = N(venteConseille);
   const margeBrute = vente - achat;
@@ -82,9 +85,19 @@ export default function OffreForm({ offre }: { offre: Offre | null }) {
         <div className="border-t pt-4">
           <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Tarification</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <Num label="Tarif achat HT" name="tarif_achat" value={tarifAchat} onChange={setTarifAchat} />
-            <Num label="Taux marge" name="taux_marge" value={tauxMarge} onChange={setTauxMarge} />
+            <Num label="Heures" name="heures" value={heures} onChange={setHeures} step="1" />
+            <Num label="Taux horaire HT" name="prix_heure" value={prixHeure} onChange={setPrixHeure} />
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tarif achat HT <span className="ml-1 text-[11px] text-gray-400">(calcule)</span>
+              </label>
+              <input readOnly value={eur(achat)}
+                className="w-full border rounded px-3 py-2.5 text-sm bg-gray-50 text-gray-600" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+            <Num label="Taux marge" name="taux_marge" value={tauxMarge} onChange={setTauxMarge} />
+            <div className="sm:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Tarif vente conseille HT
                 {manuel
@@ -98,8 +111,9 @@ export default function OffreForm({ offre }: { offre: Offre | null }) {
             </div>
           </div>
           <p className="text-xs text-gray-400 mt-1">
-            Taux marge en decimal (0,80 = 80 %). Le tarif conseille se calcule tout
-            seul (achat x (1 + marge)) ; tu peux le forcer a un prix rond.
+            Le tarif d&apos;achat se calcule tout seul (heures x taux horaire). Taux marge
+            en decimal (0,80 = 80 %). Le tarif conseille = achat x (1 + marge) ; tu peux le
+            forcer a un prix rond.
             {manuel && (
               <button type="button" onClick={() => setManuel(false)}
                 className="ml-1 text-blue-700 underline">
@@ -114,7 +128,7 @@ export default function OffreForm({ offre }: { offre: Offre | null }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="rounded bg-white border border-blue-200 p-3 space-y-0.5 text-sm">
                 <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Sur le tarif conseille</p>
-                <div className="flex justify-between"><span className="text-gray-500">Achat</span><span>{eur(achat)}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Achat ({N(heures)} h x {eur(N(prixHeure))})</span><span>{eur(achat)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Vente conseillee</span><span className="font-semibold">{eur(vente)}</span></div>
                 <div className="flex justify-between text-green-700"><span>Marge brute</span><span className="font-semibold">{eur(margeBrute)}{achat > 0 ? ` (${margePct} %)` : ""}</span></div>
               </div>
@@ -132,7 +146,6 @@ export default function OffreForm({ offre }: { offre: Offre | null }) {
         <div className="border-t pt-4">
           <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Details</h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            <Field label="Heures" name="heures" type="number" defaultValue={offre?.heures} />
             <Num label="Commission apporteur" name="commission_apporteur" value={commission} onChange={setCommission} />
           </div>
         </div>
@@ -164,13 +177,13 @@ function Field({ label, name, type = "text", defaultValue, required }: {
   );
 }
 
-function Num({ label, name, value, onChange }: {
-  label: string; name: string; value: string; onChange: (v: string) => void;
+function Num({ label, name, value, onChange, step = "0.01" }: {
+  label: string; name: string; value: string; onChange: (v: string) => void; step?: string;
 }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input name={name} type="number" step="0.01" inputMode="decimal" value={value}
+      <input name={name} type="number" step={step} inputMode="decimal" value={value}
         onChange={(e) => onChange(e.target.value)}
         className="w-full border rounded px-3 py-2.5 text-sm" />
     </div>

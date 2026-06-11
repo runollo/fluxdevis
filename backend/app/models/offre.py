@@ -24,9 +24,21 @@ class Offre(Base, TimestampMixin):
     tarif_vente_conseille: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     pages: Mapped[int] = mapped_column(Integer)
     heures: Mapped[int] = mapped_column(Integer)
+    # Taux horaire d'achat (comme le "prix/heure" des Options). Le tarif d'achat en
+    # decoule : tarif_achat = prix_heure * heures. 4 decimales pour reproduire au
+    # centime les tarifs ronds historiques (taux implicites non entiers).
+    prix_heure: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=27, server_default="27")
     commission_apporteur: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0)
     actif: Mapped[bool] = mapped_column(Boolean, default=True)
     ordre: Mapped[int] = mapped_column(Integer, default=0)
 
     # Relations
     inclusions: Mapped[list["OptionInclusion"]] = relationship(back_populates="offre")
+
+    def recalculer_prix(self):
+        """Recalcule le tarif d'achat a partir des heures et du taux horaire :
+        tarif_achat = prix_heure * heures (arrondi au centime).
+
+        Le tarif de vente conseille n'est PAS touche ici : il reste surchargeable
+        a un prix rond (calcul auto achat x (1+marge) gere a la saisie)."""
+        self.tarif_achat = (self.prix_heure * self.heures).quantize(Decimal("0.01"))

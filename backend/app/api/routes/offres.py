@@ -23,6 +23,7 @@ class OffreRead(BaseModel):
     tarif_vente_conseille: Decimal
     pages: int
     heures: int
+    prix_heure: Decimal
     commission_apporteur: Decimal
     actif: bool
     ordre: int
@@ -34,11 +35,13 @@ class OffreCreate(BaseModel):
     nom: str
     type_site: str
     type_offre: str
-    tarif_achat: Decimal
+    # tarif_achat est CALCULE (prix_heure * heures) : ignore en entree, recalcule.
+    tarif_achat: Decimal = Decimal("0")
     taux_marge: Decimal
     tarif_vente_conseille: Decimal
     pages: int
     heures: int
+    prix_heure: Decimal = Decimal("27")
     commission_apporteur: Decimal = Decimal("0")
     ordre: int = 0
 
@@ -52,6 +55,7 @@ class OffreUpdate(BaseModel):
     tarif_vente_conseille: Decimal | None = None
     pages: int | None = None
     heures: int | None = None
+    prix_heure: Decimal | None = None
     commission_apporteur: Decimal | None = None
     actif: bool | None = None
     ordre: int | None = None
@@ -78,6 +82,7 @@ async def get_offre(offre_id: int, db: AsyncSession = Depends(get_db)):
 @router.post("/", response_model=OffreRead, status_code=201)
 async def create_offre(data: OffreCreate, db: AsyncSession = Depends(get_db)):
     offre = Offre(**data.model_dump())
+    offre.recalculer_prix()  # tarif_achat = prix_heure * heures
     db.add(offre)
     await db.commit()
     await db.refresh(offre)
@@ -91,6 +96,7 @@ async def update_offre(offre_id: int, data: OffreUpdate, db: AsyncSession = Depe
         raise HTTPException(404, "Offre non trouvee")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(offre, field, value)
+    offre.recalculer_prix()  # tarif_achat = prix_heure * heures (vente non touchee)
     await db.commit()
     await db.refresh(offre)
     return offre

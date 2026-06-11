@@ -9,11 +9,11 @@ export async function saveOffre(formData: FormData) {
     nom: formData.get("nom"),
     type_site: formData.get("type_site"),
     type_offre: formData.get("type_offre"),
-    tarif_achat: Number(formData.get("tarif_achat")),
     taux_marge: Number(formData.get("taux_marge")),
     tarif_vente_conseille: Number(formData.get("tarif_vente_conseille")),
     pages: Number(formData.get("pages")),
     heures: Number(formData.get("heures")),
+    prix_heure: Number(formData.get("prix_heure")),
     commission_apporteur: Number(formData.get("commission_apporteur")),
   };
 

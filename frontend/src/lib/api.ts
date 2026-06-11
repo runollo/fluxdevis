@@ -68,7 +68,7 @@ export async function clientFetch<T>(path: string, opts?: RequestInit): Promise<
 export interface Offre {
   id: number; nom: string; type_site: string; type_offre: string;
   tarif_achat: number; taux_marge: number; tarif_vente_conseille: number;
-  pages: number; heures: number; commission_apporteur: number;
+  pages: number; heures: number; prix_heure: number; commission_apporteur: number;
   actif: boolean; ordre: number;
 }
 

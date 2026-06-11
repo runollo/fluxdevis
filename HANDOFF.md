@@ -1,11 +1,62 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-10
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-11
 
 ---
 
-## POINT DE REPRISE (2026-06-10)
+## POINT DE REPRISE (2026-06-11)
+
+Session 2026-06-11 — Conformite facturation, AVOIRS, deploiement systemd, et REMISE A
+PLAT de la serie 2026. Detail complet : section "Session 2026-06-11 (detail)". En bref :
+
+1. DEPLOIEMENT systemd : backend + frontend tournent en SERVICES SYSTEMD utilisateur
+   (`fluxdevis-backend` / `fluxdevis-frontend`, compte ullop, `Linger=yes`) -> redemarrage
+   auto au boot et apres crash. Avant, le front etait lance en avant-plan dans un terminal
+   et un terminal ferme le tuait (incident du 2026-06-10 au soir). NE PLUS lancer en
+   foreground pour la prod. Cf. CLAUDE.md section "Deploiement (services systemd)".
+   URL inchangee : http://192.168.1.30:3001 (port 3001 fige).
+
+2. ECHEANCIER 3x/4x calcule depuis la DATE DE SIGNATURE du devis (`date_signature`, repli
+   `date_emission`), reparti regulierement dans le delai legal B2B (J -> J+60 max, art.
+   L441-10). Ex 4x = J / J+20 / J+40 / J+60. Le bloc echeancier du devis edite desormais
+   `date_signature` (l'intervalle fixe a disparu). Echeancier affiche aussi sur le SOLDE.
+   Service : `echeances.py` (`dates_echeancier_legal`, `DELAI_LEGAL_B2B_JOURS=60`).
+
+3. MENTIONS OBLIGATOIRES facture (conformite factures.gouv) : ligne "Date de l'acompte"
+   (= date de versement de l'acompte, mention legale) ; n° TVA intracom du CLIENT (fige
+   dans le devis via snapshot `devis.client_tva_intracom`, affiche sur la facture) ;
+   penalites de retard etoffees (de plein droit, sans rappel prealable, articles L.441-10
+   et D.441-5, indemnite 40 EUR).
+
+4. AVOIRS conformes (NOUVELLE FONCTION) : annulation d'une facture emise par un VRAI
+   document d'avoir (type `AVOIR`, sequence DEDIEE `AV<annee>-NNN` via table
+   `compteur_avoir`, montants NEGATIFS, ref facture d'origine `facture_origine_id`), au
+   lieu d'un simple changement de statut. `POST /api/factures/{id}/avoir` cree l'avoir et
+   passe l'origine en ANNULEE. Frontend : "Etablir un avoir" (ex bouton "Annuler") avec
+   MOTIF obligatoire (figure sur la piece). Migration `343c273b35c3`.
+
+5. REMISE A PLAT DE LA SERIE 2026 (EN COURS cote Bruno au 2026-06-11) :
+   - TOUTES les factures 2026 ont ete SUPPRIMEES (Omnipub F2026-001 + ASK-VSE F2026-005..009),
+     le DEVIS Omnipub supprime (devis ASK-VSE CONSERVES), compteur facture 2026 REMIS A 0.
+   - Backup JSON des donnees supprimees : `backend/backups/backup_avant_suppression.json`
+     (hors git, restaurable). Le compteur_avoir est vierge -> 1er avoir = AV2026-001.
+   - RAISON : le devis Omnipub genere ne correspondait pas au devis reellement envoye ; et
+     la facture Omnipub avait ete etablie pour une demande de pret bancaire (non obtenu),
+     le site etant finalement OFFERT -> a regulariser proprement par un avoir.
+   - PLAN BRUNO (en cours) : (a) recreer le devis Omnipub conforme -> (b) emettre la facture
+     d'acompte = F2026-001 -> (c) etablir l'avoir = AV2026-001 -> (d) regenerer les factures
+     ASK-VSE dans l'ordre (F2026-002...). VIGILANCE TVA : la TVA d'avril (Omnipub) et les
+     periodes ASK-VSE sont DEJA DECLAREES -> reprendre les MEMES dates et montants lors de
+     la regeneration pour que les declarations restent coherentes.
+
+   /!\ Les sections anterieures du HANDOFF (import historique "F2026-001..009", "compteur a
+   9", "prochaine = F2026-010") sont OBSOLETES depuis cette remise a plat. La serie 2026 est
+   repartie de zero.
+
+---
+
+## POINT DE REPRISE (2026-06-10) [HISTORIQUE — voir remise a plat 2026-06-11 ci-dessus]
 
 Numerotation legale des factures + import de l'historique reel : TERMINE (2026-06-10).
 FluxDevis devient la SOURCE UNIQUE de facturation. Cf. section "Numerotation legale
@@ -853,6 +904,70 @@ A reutiliser pour : repondre aux questions client, et eventuellement une page UI
 
 ---
 
+## Session 2026-06-11 (detail)
+
+Commits (du plus ancien au plus recent) : `0295887` echeancier signature, `09b187b`
+docs systemd, `e1a5210` mentions obligatoires, `6ef68e8` avoirs.
+
+### Deploiement systemd (commit `09b187b`)
+- `~/.config/systemd/user/fluxdevis-backend.service` (uvicorn 127.0.0.1:8000, `--reload`)
+  et `fluxdevis-frontend.service` (`npm run dev -- --port 3001`). `Restart=always`,
+  `WantedBy=default.target`, `Linger=yes` (demarrage au boot sans login). PostgreSQL est
+  deja un service systeme active au boot.
+- Gestion : `systemctl --user {status,restart} fluxdevis-{backend,frontend}` ;
+  logs `journalctl --user -u fluxdevis-frontend -f`. Documente dans CLAUDE.md.
+- Cause de l'incident resolu : le front etait lance en avant-plan (pas de nohup/tmux) ->
+  fermeture du terminal = SIGHUP = process tue.
+
+### Echeancier depuis la date de signature (commit `0295887`)
+- `app/services/echeances.py` : `DELAI_LEGAL_B2B_JOURS=60` + `dates_echeancier_legal(base,
+  n, delai_max=60)` (repartition reguliere base..base+60j ; n<=1 -> [base]).
+- `app/api/routes/devis.py` : helper `_base_echeancier(devis)` = `date_signature or
+  date_debut_echeancier or date_emission` ; utilise dans `_creer_factures_acompte` et
+  `_recompute_dates_factures` (l'ancien `dates_echeancier`/intervalle n'est plus le pilote).
+  `EcheancierUpdate` accepte `date_signature` ; la route `/echeancier` la journalise.
+- `app/api/routes/factures.py` (`PATCH /{id}/echeances`) : alerte legale non bloquante
+  (`alerte_legale`) si une echeance editee depasse signature+60j.
+- `app/services/generation_facture.py` : echeancier affiche aussi pour `type == "solde"`.
+- Frontend : bloc echeancier de `/devis/detail` edite `date_signature` (champ intervalle/
+  date_debut retires) + note legale ; `actions.ts` `modifierEcheancier` envoie `date_signature`.
+
+### Mentions obligatoires facture (commit `e1a5210`)
+- "Date de l'acompte" : `FactureData.date_acompte` (rendu dans la cellule meta pour
+  acompte/solde, libelle "Date du solde" pour le solde) ; alimente par
+  `facture.date_paiement or facture.date_echeance` dans `_generer_facture_docx`.
+- TVA client : colonne snapshot `devis.client_tva_intracom` (migration `74c54aff7c28`),
+  copiee depuis `client.tva_intracom` a la creation du devis (les 2 constructeurs) ;
+  `FactureData.client_tva_num` affiche sous le bloc destinataire.
+- Penalites de retard etoffees dans `_add_mentions` (de plein droit, sans rappel prealable,
+  L.441-10 / D.441-5, 40 EUR). Toutes les donnees emetteur (IBAN/BIC/email/web) etaient
+  deja en base sur la societe et sont desormais bien affichees.
+
+### Avoirs (commit `6ef68e8`)
+- `app/models/facture.py` : `TypeFacture.AVOIR`, `Facture.facture_origine_id` (FK self),
+  table `CompteurAvoir`. Migration `343c273b35c3` (enum value 'AVOIR' ajoutee a la main via
+  `ALTER TYPE typefacture ADD VALUE` ; SQLAlchemy stocke le NOM majuscule du membre).
+- `app/services/numerotation_facture.py` : `prochain_numero_avoir` / `format_numero_avoir`
+  (sequence `AV<annee>-NNN`, table `compteur_avoir`).
+- `app/api/routes/factures.py` : `POST /{id}/avoir` (body `{motif}`) cree l'avoir (montants
+  negatifs, date du jour, ref origine) et passe l'origine en ANNULEE ; garde-fous (pas un
+  avoir, pas brouillon, pas deja annulee, un seul avoir par facture).
+- `app/services/generation_facture.py` : type "avoir" -> titre "AVOIR", "Avoir n°", "Ref.
+  facture annulee", "Net a porter au credit", mentions deduction + TVA regularisee ; nom de
+  fichier `Avoir_*`. `FactureData.facture_origine_num`.
+- Frontend : le flux "Annuler" devient "Etablir un avoir" (action `annulerFacture` ->
+  `POST /avoir` avec MOTIF obligatoire) ; ecran `/factures/confirmer` adapte (err=motif) ;
+  type `avoir` ajoute aux libelles et exclu des boutons d'avoir. L'ancien `POST /{id}/annuler`
+  (statut seul) existe encore mais n'est plus utilise par l'UI.
+
+### Remise a plat de la serie 2026 (operation en base, pas de commit de code)
+- Suppression directe en base (les factures emises ne sont pas supprimables via l'UI :
+  garde-fous) : 6 factures (F2026-001 + F2026-005..009) + devis Omnipub (id 18) ; reset
+  `compteur_facture[2026]=0`. Backup prealable : `backend/backups/backup_avant_suppression.json`.
+- Devis ASK-VSE conserves (Bruno regenere leurs factures). Voir POINT DE REPRISE pour le plan.
+
+---
+
 ## Comment demarrer
 
 ### Prerequis
@@ -860,17 +975,22 @@ A reutiliser pour : repondre aux questions client, et eventuellement une page UI
 - Python 3.14 avec `python3.14-venv` installe
 - Node.js 22+
 
-### Lancer le backend
+### En production locale (defaut) : services systemd
+Backend + frontend tournent en services systemd utilisateur (demarrage auto au boot).
 ```bash
-cd /home/ullop/.openclaw/workspace/projects/fluxdevis/backend
-source .venv/bin/activate
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+systemctl --user status fluxdevis-backend fluxdevis-frontend
+systemctl --user restart fluxdevis-frontend      # apres une mise a jour de code
+journalctl --user -u fluxdevis-backend -f         # logs
 ```
 
-### Lancer le frontend
+### Lancement manuel (dev ponctuel — sinon conflit de port avec le service)
 ```bash
+systemctl --user stop fluxdevis-backend            # liberer le port 8000 d'abord
+cd /home/ullop/.openclaw/workspace/projects/fluxdevis/backend
+./.venv/bin/uvicorn main:app --reload --port 8000
+
+systemctl --user stop fluxdevis-frontend           # liberer le port 3001 d'abord
 cd /home/ullop/.openclaw/workspace/projects/fluxdevis/frontend
-export PATH="/home/ullop/.npm-global/bin:$PATH"
 npm run dev -- -p 3001
 ```
 

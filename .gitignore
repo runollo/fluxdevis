@@ -31,3 +31,6 @@ Thumbs.db
 node_modules/
 .next/
 out/
+
+# Backups de donnees (comptables, hors versionnage)
+backend/backups/

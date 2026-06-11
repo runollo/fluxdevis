@@ -105,7 +105,9 @@ def generer_facture(data: FactureData) -> BytesIO:
     _add_totaux(doc, data)
     spacer(doc, 6)
 
-    if data.type_facture == "acompte" and data.echeances:
+    # L'echeancier complet s'affiche sur les factures d'acompte ET sur la facture
+    # de solde (dernier versement d'un plan en 3 ou 4 fois), pas sur la maintenance.
+    if data.type_facture in ("acompte", "solde") and data.echeances:
         _add_echeancier(doc, data)
         spacer(doc, 6)
 

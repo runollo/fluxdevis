@@ -23,7 +23,8 @@ from app.services import relances as relances_svc
 from app.core.config import get_settings
 from pydantic import BaseModel
 from decimal import Decimal
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
+from app.services.echeances import DELAI_LEGAL_B2B_JOURS
 
 router = APIRouter()
 
@@ -676,8 +677,22 @@ async def modifier_echeances_facture(
                                     ech.date_echeance, maj.date_echeance, data.motif)
             ech.date_echeance = maj.date_echeance
 
+    # Garde-fou legal : alerte (non bloquante) si une echeance saisie manuellement
+    # depasse le delai legal de paiement B2B, soit signature + 60 jours.
+    alerte_legale = None
+    devis = await db.get(Devis, facture.devis_id) if facture.devis_id else None
+    if devis:
+        base = devis.date_signature or devis.date_debut_echeancier or devis.date_emission
+        limite = base + timedelta(days=DELAI_LEGAL_B2B_JOURS)
+        if any(e.date_echeance and e.date_echeance > limite for e in facture.echeances):
+            alerte_legale = (
+                f"Attention : une ou plusieurs echeances depassent le delai legal de "
+                f"paiement entre professionnels ({DELAI_LEGAL_B2B_JOURS} jours apres la "
+                f"signature, soit au plus tard le {limite.strftime('%d/%m/%Y')})."
+            )
+
     await db.commit()
-    return {"ok": True}
+    return {"ok": True, "alerte_legale": alerte_legale}
 
 
 @router.get("/{facture_id}/historique")

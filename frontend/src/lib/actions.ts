@@ -550,10 +550,8 @@ export async function modifierDatesDevis(formData: FormData) {
 export async function modifierEcheancier(formData: FormData) {
   const id = formData.get("devis_id") as string;
   if (!id) redirect("/devis");
-  const intervalle = formData.get("intervalle_echeance_jours") as string;
   const body: Record<string, unknown> = {
-    date_debut_echeancier: (formData.get("date_debut_echeancier") as string) || null,
-    intervalle_echeance_jours: intervalle ? Number(intervalle) : null,
+    date_signature: (formData.get("date_signature") as string) || null,
     plan_paiement: (formData.get("plan_paiement") as string) || null,
     motif: (formData.get("motif") as string) || null,
     confirme: true,

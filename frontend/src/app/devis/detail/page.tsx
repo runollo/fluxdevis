@@ -356,7 +356,7 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             </button>
           </form>
 
-          {/* Echeancier (plan + date de depart + intervalle) */}
+          {/* Echeancier (plan + date de signature, base de calcul) */}
           <form action={modifierEcheancier} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="devis_id" value={d.id} />
             <div>
@@ -367,14 +367,9 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Date de depart echeancier</label>
-              <input type="date" name="date_debut_echeancier" defaultValue={d.date_debut_echeancier ?? d.date_emission}
+              <label className="block text-xs text-gray-400 mb-1">Date de signature (base de l&apos;echeancier)</label>
+              <input type="date" name="date_signature" defaultValue={d.date_signature ?? ""}
                 className="border rounded px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Intervalle (jours)</label>
-              <input type="number" name="intervalle_echeance_jours" min={1} defaultValue={d.intervalle_echeance_jours}
-                className="w-24 border rounded px-3 py-2 text-sm" />
             </div>
             <div className="flex-1 min-w-[140px]">
               <label className="block text-xs text-gray-400 mb-1">Motif (facultatif)</label>
@@ -385,9 +380,12 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             </button>
           </form>
           <p className="text-xs text-gray-400">
-            Les dates d&apos;echeance des factures en brouillon se recalculent automatiquement
-            (date de depart + intervalle). Changer le plan regenere les factures d&apos;acompte
-            en brouillon.
+            L&apos;echeancier court a partir de la date de signature (a defaut, la date
+            d&apos;emission). Les versements en 3 ou 4 fois sont repartis regulierement
+            jusqu&apos;a J+{60} maximum, pour rester dans le delai legal de paiement entre
+            professionnels (art. L441-10 du Code de commerce). Les dates des factures en
+            brouillon se recalculent automatiquement ; changer le plan regenere les
+            factures d&apos;acompte en brouillon.
           </p>
         </div>
       </details>
@@ -635,8 +633,10 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
           </div>
         )}
 
-        {/* Document officiel externe (cas d'un devis reconstitue) */}
-        {(d.reference_externe || d.date_signature) && (
+        {/* Document officiel externe (cas d'un devis reconstitue) : seule une
+            reference externe caracterise ce cas. La date de signature seule sert
+            desormais de base a l'echeancier pour tout devis. */}
+        {d.reference_externe && (
           <div className="mb-3 rounded bg-amber-50 border border-amber-200 text-amber-800 text-sm px-3 py-2">
             Le document officiel qui fait foi est une piece jointe externe
             {d.reference_externe ? ` (ref. ${d.reference_externe})` : ""}

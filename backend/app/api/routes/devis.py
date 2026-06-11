@@ -24,7 +24,10 @@ from app.services.reference import generer_reference_devis, remplacer_prefixe_re
 from app.services.generation_devis import (
     generer_devis, repartition_echeances, charger_overrides_packs, charger_heures_packs,
 )
-from app.services.echeances import dates_echeancier
+from app.services.echeances import (
+    dates_echeancier_legal,
+    DELAI_LEGAL_B2B_JOURS,
+)
 from app.services.export_excel import export_devis_xlsx
 from app.services.facturation_maintenance import (
     generer_facture_maintenance, prochaine_periode, montant_recurrent_ht, MaintenanceError,
@@ -823,6 +826,7 @@ class DatesDevisUpdate(BaseModel):
 
 
 class EcheancierUpdate(BaseModel):
+    date_signature: date | None = None
     date_debut_echeancier: date | None = None
     intervalle_echeance_jours: int | None = None
     plan_paiement: str | None = None
@@ -894,13 +898,20 @@ async def modifier_dates_devis(
 _TYPES_ACOMPTE = (TypeFacture.ACOMPTE, TypeFacture.SOLDE)
 
 
+def _base_echeancier(devis: Devis) -> date:
+    """Date de depart de l'echeancier : la date de signature du devis/contrat en
+    priorite (l'echeancier de paiement court a partir de la signature), sinon une
+    date de depart explicitement configuree, sinon a defaut la date d'emission."""
+    return devis.date_signature or devis.date_debut_echeancier or devis.date_emission
+
+
 async def _recompute_dates_factures(db: AsyncSession, devis: Devis, factures: list[Facture]):
     """Recalcule les dates d'echeance des factures d'acompte/solde BROUILLON depuis
     la config d'echeancier du devis. N'altere ni les factures emises ni la maintenance."""
     plan = devis.plan_paiement.value if devis.plan_paiement else "100%"
     parts = repartition_echeances(plan, devis.total_ttc)
-    base = devis.date_debut_echeancier or devis.date_emission
-    dates = dates_echeancier(base, devis.intervalle_echeance_jours, len(parts))
+    base = _base_echeancier(devis)
+    dates = dates_echeancier_legal(base, len(parts))
     acomptes = [f for f in factures if f.type in _TYPES_ACOMPTE]
     for idx, f in enumerate(sorted(acomptes, key=lambda x: x.id)):
         if f.statut != StatutFacture.BROUILLON:
@@ -946,6 +957,10 @@ async def modifier_echeancier_devis(
         )
 
     # Config
+    if data.date_signature is not None and data.date_signature != devis.date_signature:
+        journal_svc.enregistrer(db, "devis", devis_id, "date_signature",
+                                devis.date_signature, data.date_signature, data.motif)
+        devis.date_signature = data.date_signature
     if data.date_debut_echeancier is not None and data.date_debut_echeancier != devis.date_debut_echeancier:
         journal_svc.enregistrer(db, "devis", devis_id, "date_debut_echeancier",
                                 devis.date_debut_echeancier, data.date_debut_echeancier, data.motif)
@@ -973,6 +988,7 @@ async def modifier_echeancier_devis(
     return {
         "id": devis.id,
         "plan_paiement": _PLAN_LABEL.get(devis.plan_paiement, "100%"),
+        "date_signature": devis.date_signature.isoformat() if devis.date_signature else None,
         "date_debut_echeancier": devis.date_debut_echeancier.isoformat() if devis.date_debut_echeancier else None,
         "intervalle_echeance_jours": devis.intervalle_echeance_jours,
     }
@@ -1163,10 +1179,10 @@ async def _creer_factures_acompte(db: AsyncSession, devis: Devis) -> list[Factur
     parts = repartition_echeances(plan, devis.total_ttc)
     nb = len(parts)
 
-    # Dates d'echeance etalees : base (date_debut_echeancier ou date_emission)
-    # + n x intervalle. Restent editables ensuite par PATCH.
-    base = devis.date_debut_echeancier or devis.date_emission
-    dates = dates_echeancier(base, devis.intervalle_echeance_jours, nb)
+    # Dates d'echeance etalees a partir de la signature (cf _base_echeancier),
+    # reparties dans le delai legal B2B (J -> J+60). Restent editables par PATCH.
+    base = _base_echeancier(devis)
+    dates = dates_echeancier_legal(base, nb)
 
     # Echeancier complet (commun a toutes les factures, pour affichage Word)
     plan_rows = [

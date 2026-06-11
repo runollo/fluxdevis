@@ -11,6 +11,13 @@ from fractions import Fraction
 
 _CENT = Decimal("0.01")
 
+# Delai de paiement maximal entre professionnels (B2B), art. L441-10 du Code de
+# commerce : 60 jours a compter de l'emission de la facture. Sert de borne a
+# l'etalement de l'echeancier : le dernier versement ne depasse pas la date de
+# signature + 60 jours, de sorte que le paiement en plusieurs fois reste dans
+# le temps imparti par la legislation.
+DELAI_LEGAL_B2B_JOURS = 60
+
 
 def _q(v) -> Decimal:
     return Decimal(v).quantize(_CENT, rounding=ROUND_HALF_UP)
@@ -24,6 +31,29 @@ def dates_echeancier(base: date, intervalle_jours: int, n: int) -> list[date]:
     """
     pas = intervalle_jours if (intervalle_jours and intervalle_jours > 0) else 30
     return [base + timedelta(days=i * pas) for i in range(n)]
+
+
+def dates_echeancier_legal(
+    base: date, n: int, delai_max_jours: int = DELAI_LEGAL_B2B_JOURS
+) -> list[date]:
+    """Repartit n dates d'echeance regulierement entre `base` (1er versement, du
+    a la signature) et `base + delai_max_jours` (dernier versement), afin que le
+    paiement en plusieurs fois tienne dans le delai legal B2B.
+
+    - n <= 1 : [base] (paiement comptant, du a la signature)
+    - n  > 1 : base, base + pas, ..., base + delai_max_jours, avec un pas regulier
+      egal a delai_max_jours / (n - 1).
+
+    Exemples (delai 60 j) :
+      3x -> J, J+30, J+60
+      4x -> J, J+20, J+40, J+60
+
+    Les dates restent modifiables ligne par ligne ensuite (echeancier editable).
+    """
+    if n <= 1:
+        return [base]
+    pas = delai_max_jours / (n - 1)
+    return [base + timedelta(days=round(i * pas)) for i in range(n)]
 
 
 def repartir_au_centime(total, fractions: list[Fraction]) -> list[Decimal]:

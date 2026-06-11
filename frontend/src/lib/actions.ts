@@ -652,18 +652,19 @@ export async function archiverFacture(formData: FormData) {
 }
 
 
-// Niveau 2 : annulation par avoir d'une facture emise. Exige la saisie du mot
-// SUPPRIMER (acte comptable engageant).
+// Niveau 2 : annulation par avoir d'une facture emise. Emet une vraie piece
+// d'avoir (AV<annee>-NNN, montants negatifs) et passe l'origine en ANNULEE.
+// Le motif (obligatoire) figure sur le document d'avoir et sert de garde-fou.
 export async function annulerFacture(formData: FormData) {
   const id = formData.get("facture_id") as string;
   const retour = (formData.get("retour") as string) || "/factures";
-  const confirmation = ((formData.get("confirmation") as string) || "").trim();
+  const motif = ((formData.get("motif") as string) || "").trim();
   if (!id) redirect("/factures");
-  if (confirmation !== "SUPPRIMER") {
-    redirect(`/factures/confirmer?id=${id}&action=annuler&retour=${encodeURIComponent(retour)}&err=mot`);
+  if (!motif) {
+    redirect(`/factures/confirmer?id=${id}&action=annuler&retour=${encodeURIComponent(retour)}&err=motif`);
   }
   try {
-    await serverPost(`/factures/${id}/annuler`, {});
+    await serverPost(`/factures/${id}/avoir`, { motif });
   } catch (e) {
     redirect(ajouterParam(retour, "suppr_msg", extraireDetail(e)));
   }

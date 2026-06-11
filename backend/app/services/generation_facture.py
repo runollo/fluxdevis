@@ -70,6 +70,8 @@ class FactureData:
 
         # References
         self.devis_ref: str = kwargs.get("devis_ref", "")
+        # Pour un avoir : numero de la facture d'origine annulee/rectifiee.
+        self.facture_origine_num: str = kwargs.get("facture_origine_num", "")
         self.prestation: str = kwargs.get("prestation", "")
         self.periode: str | None = kwargs.get("periode")
         # Pour Shopify : l'hebergement/abonnement plateforme est a la charge du
@@ -95,10 +97,14 @@ def generer_facture(data: FactureData) -> BytesIO:
     setup_page(doc)
     force_arial(doc)
 
-    sous_map = {"maintenance": "de maintenance", "solde": "de solde", "acompte": "d\u2019acompte"}
-    sous_titre = sous_map.get(data.type_facture, "d\u2019acompte")
+    if data.type_facture == "avoir":
+        titre, sous_titre = "AVOIR", "d\u2019annulation"
+    else:
+        titre = "FACTURE"
+        sous_map = {"maintenance": "de maintenance", "solde": "de solde", "acompte": "d\u2019acompte"}
+        sous_titre = sous_map.get(data.type_facture, "d\u2019acompte")
 
-    _add_header(doc, data, sous_titre)
+    _add_header(doc, data, sous_titre, titre)
     spacer(doc, 4)
     _add_emetteur_meta(doc, data)
     spacer(doc, 4)
@@ -123,9 +129,9 @@ def generer_facture(data: FactureData) -> BytesIO:
     return buf
 
 
-def _add_header(doc, data, sous_titre):
+def _add_header(doc, data, sous_titre, titre="FACTURE"):
     marque = data.emetteur_marque or data.emetteur_nom or "FluXweb"
-    add_logo_header(doc, "FACTURE", sous_titre=sous_titre, marque_fallback=marque)
+    add_logo_header(doc, titre, sous_titre=sous_titre, marque_fallback=marque)
 
 
 def _add_emetteur_meta(doc, data):
@@ -138,15 +144,20 @@ def _add_emetteur_meta(doc, data):
         (f"RCS : {data.emetteur_rcs}" if data.emetteur_rcs else "", False),
         (f"TVA : {data.emetteur_tva_num}" if data.emetteur_tva_num else "", False),
     ]
+    est_avoir = data.type_facture == "avoir"
     meta = [
-        ("Facture n\u00b0", data.numero),
+        ("Avoir n\u00b0" if est_avoir else "Facture n\u00b0", data.numero),
         ("Date d\u2019\u00e9mission", data.date_emission.strftime("%d/%m/%Y")),
     ]
-    # Mention obligatoire : date de la prestation ou date de versement de l'acompte.
-    if data.date_acompte and data.type_facture in ("acompte", "solde"):
-        label_versement = "Date du solde" if data.type_facture == "solde" else "Date de l\u2019acompte"
-        meta.append((label_versement, data.date_acompte.strftime("%d/%m/%Y")))
-    meta.append(("Date d\u2019\u00e9ch\u00e9ance", data.date_echeance.strftime("%d/%m/%Y")))
+    if est_avoir:
+        if data.facture_origine_num:
+            meta.append(("R\u00e9f. facture annul\u00e9e", data.facture_origine_num))
+    else:
+        # Mention obligatoire : date de la prestation ou date de versement de l'acompte.
+        if data.date_acompte and data.type_facture in ("acompte", "solde"):
+            label_versement = "Date du solde" if data.type_facture == "solde" else "Date de l\u2019acompte"
+            meta.append((label_versement, data.date_acompte.strftime("%d/%m/%Y")))
+        meta.append(("Date d\u2019\u00e9ch\u00e9ance", data.date_echeance.strftime("%d/%m/%Y")))
     if data.periode:
         meta.append(("P\u00e9riode", data.periode))
     add_emetteur_meta(doc, emetteur_lines, meta)
@@ -195,11 +206,12 @@ def _add_totaux(doc, data):
     tbl_no_spacing(tbl)
     full_tbl_borders(tbl)
 
+    net_label = "Net \u00e0 porter au cr\u00e9dit" if data.type_facture == "avoir" else "Net \u00e0 payer"
     lines = [
         ("Total HT", fmt_eur(data.montant_ht)),
         ("TVA 20 %", fmt_eur(data.montant_tva)),
         ("Total TTC", fmt_eur(data.montant_ttc)),
-        ("Net \u00e0 payer", fmt_eur(data.montant_ttc)),
+        (net_label, fmt_eur(data.montant_ttc)),
     ]
     for i, (label, val) in enumerate(lines):
         cell_w(tbl.rows[i].cells[0], 14)
@@ -254,6 +266,18 @@ def _add_echeancier(doc, data):
 
 def _add_mentions(doc, data):
     hline(doc)
+    if data.type_facture == "avoir":
+        ref = f" {data.facture_origine_num}" if data.facture_origine_num else ""
+        mentions = [
+            f"Avoir d’annulation de la facture{ref}, venant en déduction de celle-ci.",
+            "Montant à porter au crédit du client.",
+            "TVA régularisée sur la période d’émission du présent avoir.",
+        ]
+        for m in mentions:
+            p = doc.add_paragraph()
+            p_fmt(p, before=0, after=1)
+            run(p, m, italic=True, size=7, color=C_AHEAD)
+        return
     mentions = [
         f"R\u00e8glement par virement bancaire : IBAN {data.emetteur_iban} \u2014 BIC {data.emetteur_bic}",
         "En cas de retard de paiement, des p\u00e9nalit\u00e9s seront exigibles de plein droit, "

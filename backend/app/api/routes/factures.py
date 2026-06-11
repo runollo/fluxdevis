@@ -7,12 +7,12 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.facture import Facture, Echeance, StatutFacture, TypeFacture, FactureEnvoi
+from app.models.facture import Facture, FactureLigne, Echeance, StatutFacture, TypeFacture, FactureEnvoi
 from app.models.devis import Devis
 from app.models.societe import Societe
 from app.services.generation_facture import FactureData, generer_facture
 from app.services.facturation_maintenance import devis_maintenance_dus
-from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero
+from app.services.numerotation_facture import prochain_numero, numero_en_cours, format_numero, prochain_numero_avoir
 from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
@@ -216,6 +216,12 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     devis = await db.get(Devis, facture.devis_id)
     societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
 
+    # Pour un avoir : numero de la facture d'origine annulee.
+    facture_origine_num = ""
+    if facture.facture_origine_id:
+        origine = await db.get(Facture, facture.facture_origine_id)
+        facture_origine_num = origine.numero if origine else ""
+
     echeances = sorted(facture.echeances, key=lambda e: e.numero)
     ech_rows = [
         {"label": e.label, "date": e.date_echeance.strftime("%d/%m/%Y"), "ttc": e.montant_ttc}
@@ -265,6 +271,7 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
         prix_unitaire_ht=facture.total_ht,
         montant_ht=facture.total_ht,
         devis_ref=devis.reference if devis else "",
+        facture_origine_num=facture_origine_num,
         periode=periode,
         est_shopify=devis.est_shopify if devis else False,
         echeances=ech_rows,
@@ -272,7 +279,8 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     )
 
     buf = generer_facture(data)
-    filename = f"Facture_{facture.numero}.docx"
+    prefixe = "Avoir" if facture.type == TypeFacture.AVOIR else "Facture"
+    filename = f"{prefixe}_{facture.numero}.docx"
     return facture, devis, societe, buf, filename
 
 
@@ -506,6 +514,80 @@ async def emettre_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(facture)
     return facture
+
+
+class AvoirRequest(BaseModel):
+    motif: str | None = None
+
+
+@router.post("/{facture_id}/avoir", response_model=FactureSummary, status_code=201)
+async def etablir_avoir(
+    facture_id: int, data: AvoirRequest, db: AsyncSession = Depends(get_db)
+):
+    """Etablit un avoir (facture rectificative) annulant une facture emise.
+
+    Cree une piece distincte de type AVOIR, en montants negatifs, numerotee dans
+    une sequence dediee (AV<annee>-NNN), datee du jour, referencant la facture
+    d'origine. La facture d'origine passe en statut ANNULEE (son numero est
+    conserve). C'est la voie conforme pour annuler une facture deja emise et,
+    le cas echeant, regulariser la TVA sur la periode courante.
+    """
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.type == TypeFacture.AVOIR:
+        raise HTTPException(400, "Un avoir ne peut pas etre annule par un autre avoir")
+    if facture.statut == StatutFacture.BROUILLON:
+        raise HTTPException(
+            400, "Une facture en brouillon se supprime (corbeille), elle ne donne pas lieu a un avoir"
+        )
+    if facture.statut == StatutFacture.ANNULEE:
+        raise HTTPException(400, "Facture deja annulee")
+
+    # Un seul avoir actif par facture
+    deja = (await db.execute(
+        select(Facture).where(
+            Facture.facture_origine_id == facture_id, Facture.archived_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if deja:
+        raise HTTPException(400, f"Un avoir existe deja pour cette facture ({deja.numero})")
+
+    today = date.today()
+    numero = await prochain_numero_avoir(db, today.year)
+    motif = (data.motif or "").strip() or "Annulation de la facture"
+    objet = f"Avoir sur facture {facture.numero} — {motif}"
+
+    ligne = FactureLigne(
+        ordre=0, designation=objet, quantite=1,
+        prix_unitaire_ht=-facture.total_ht, taux_tva=Decimal("0.20"),
+        montant_ht=-facture.total_ht,
+    )
+    avoir = Facture(
+        numero=numero,
+        type=TypeFacture.AVOIR,
+        statut=StatutFacture.EMISE,
+        devis_id=facture.devis_id,
+        facture_origine_id=facture.id,
+        date_emission=today,
+        date_echeance=today,
+        objet=objet,
+        total_ht=-facture.total_ht,
+        total_tva=-facture.total_tva,
+        total_ttc=-facture.total_ttc,
+        lignes=[ligne],
+    )
+    db.add(avoir)
+
+    ancien_statut = facture.statut.value
+    facture.statut = StatutFacture.ANNULEE
+    journal_svc.enregistrer(
+        db, "facture", facture.id, "annulation_par_avoir",
+        ancien_statut, numero, motif=motif,
+    )
+    await db.commit()
+    await db.refresh(avoir)
+    return avoir
 
 
 @router.delete("/{facture_id}", status_code=204)

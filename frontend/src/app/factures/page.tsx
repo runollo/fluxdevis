@@ -57,6 +57,7 @@ const TYPE_LABELS: Record<string, string> = {
   acompte: "Acompte",
   solde: "Solde",
   maintenance: "Maintenance",
+  avoir: "Avoir",
 };
 
 // Boutons d'action selon le statut, conformes au droit :
@@ -69,7 +70,7 @@ function ActionsFacture({ f }: { f: Facture }) {
       <Link href={`/factures/confirmer?id=${f.id}&action=archiver`} className="ml-3 text-red-600 hover:underline font-medium">Supprimer</Link>
     );
   }
-  if (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") {
+  if (f.type !== "avoir" && (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard")) {
     return (
       <Link href={`/factures/confirmer?id=${f.id}&action=annuler`} className="ml-3 text-orange-600 hover:underline font-medium">Annuler (avoir)</Link>
     );
@@ -377,7 +378,7 @@ export default async function FacturesPage(
                         Supprimer (corbeille)
                       </Link>
                     )}
-                    {(f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
+                    {f.type !== "avoir" && (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
                       <Link href={`/factures/confirmer?id=${f.id}&action=annuler`} className="block w-full text-center px-3 py-2 border border-orange-300 text-orange-600 rounded text-sm font-medium">
                         Annuler (avoir)
                       </Link>

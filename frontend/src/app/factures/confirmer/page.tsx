@@ -37,10 +37,11 @@ export default async function ConfirmerFacturePage(
   }
 
   const errMot = params.err === "mot";
-  const errApi = params.err && params.err !== "mot" ? params.err : null;
+  const errMotif = params.err === "motif";
+  const errApi = params.err && params.err !== "mot" && params.err !== "motif" ? params.err : null;
   const fort = action === "annuler" || action === "definitif";
 
-  const titre = action === "annuler" ? "Annuler cette facture (avoir) ?"
+  const titre = action === "annuler" ? "Etablir un avoir d'annulation ?"
     : action === "definitif" ? "Supprimer definitivement cette facture ?"
     : "Mettre cette facture a la corbeille ?";
 
@@ -56,6 +57,11 @@ export default async function ConfirmerFacturePage(
         {errMot && (
           <div className="mb-3 rounded border border-orange-200 bg-orange-50 p-2 text-sm text-orange-700">
             Saisie incorrecte : tapez exactement SUPPRIMER{action === "definitif" ? " et cochez la case." : "."}
+          </div>
+        )}
+        {errMotif && (
+          <div className="mb-3 rounded border border-orange-200 bg-orange-50 p-2 text-sm text-orange-700">
+            Le motif de l&apos;avoir est obligatoire.
           </div>
         )}
         {errApi && (
@@ -81,19 +87,22 @@ export default async function ConfirmerFacturePage(
         {action === "annuler" && (
           <>
             <div className="rounded border border-orange-200 bg-orange-50 p-3 text-sm text-orange-700 mb-4">
-              La facture sera <strong>annulee par un avoir</strong> (statut annulee). Son numero est
-              <strong> conserve</strong> (obligation legale). C&apos;est un acte comptable engageant.
+              Un <strong>avoir</strong> (numero <strong>AV{new Date().getFullYear()}-NNN</strong>, en
+              montants negatifs) sera emis pour annuler cette facture. Le numero de la facture
+              d&apos;origine est <strong>conserve</strong> (obligation legale) et son statut passe a
+              <strong> annulee</strong>. La TVA est regularisee sur la periode courante. Acte comptable engageant.
             </div>
             <form action={annulerFacture} className="space-y-3">
               <input type="hidden" name="facture_id" value={f.id} />
               <input type="hidden" name="retour" value={retour} />
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Tapez <strong>SUPPRIMER</strong> pour confirmer</label>
-                <input name="confirmation" autoComplete="off" className="w-full border rounded px-3 py-2 text-sm" />
+                <label className="block text-sm text-gray-600 mb-1">Motif de l&apos;avoir (obligatoire, figure sur le document)</label>
+                <input name="motif" autoComplete="off" placeholder="ex. Prestation finalement offerte"
+                  className="w-full border rounded px-3 py-2 text-sm" />
               </div>
               <div className="flex gap-2 pt-1">
                 <button type="submit" className="px-4 py-2 bg-orange-600 text-white rounded text-sm font-medium">
-                  Annuler la facture (avoir)
+                  Etablir l&apos;avoir
                 </button>
                 <Link href={retour} className="px-4 py-2 border border-gray-300 text-gray-700 rounded text-sm font-medium">Retour</Link>
               </div>

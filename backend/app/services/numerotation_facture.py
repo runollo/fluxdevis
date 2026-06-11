@@ -48,3 +48,29 @@ async def numero_en_cours(db: AsyncSession, annee: int) -> int:
         {"annee": annee},
     )
     return row.scalar_one_or_none() or 0
+
+
+def format_numero_avoir(annee: int, n: int) -> str:
+    """Formate le numero d'avoir : AV<annee>-NNN (3 chiffres min)."""
+    return f"AV{annee}-{n:03d}"
+
+
+async def prochain_numero_avoir(db: AsyncSession, annee: int) -> str:
+    """Increment atomique du compteur d'avoirs de l'annee, renvoie AV<annee>-NNN.
+
+    Sequence distincte des factures (table compteur_avoir).
+    """
+    row = await db.execute(
+        text(
+            """
+            INSERT INTO compteur_avoir (annee, dernier)
+            VALUES (:annee, 1)
+            ON CONFLICT (annee)
+            DO UPDATE SET dernier = compteur_avoir.dernier + 1
+            RETURNING dernier
+            """
+        ),
+        {"annee": annee},
+    )
+    n = row.scalar_one()
+    return format_numero_avoir(annee, n)

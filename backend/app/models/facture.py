@@ -13,6 +13,7 @@ class TypeFacture(str, enum.Enum):
     ACOMPTE = "acompte"
     MAINTENANCE = "maintenance"
     SOLDE = "solde"
+    AVOIR = "avoir"  # Facture d'avoir (annulation/rectification) en montants negatifs
 
 
 class StatutFacture(str, enum.Enum):
@@ -41,6 +42,11 @@ class Facture(Base, TimestampMixin, SoftDeleteMixin):
 
     # Lien au devis
     devis_id: Mapped[int] = mapped_column(ForeignKey("devis.id"))
+
+    # Pour un avoir (type AVOIR) : la facture d'origine qu'il annule/rectifie.
+    facture_origine_id: Mapped[int | None] = mapped_column(
+        ForeignKey("factures.id"), nullable=True
+    )
 
     # Dates
     date_emission: Mapped[date] = mapped_column(Date)
@@ -105,6 +111,19 @@ class CompteurFacture(Base):
     """
 
     __tablename__ = "compteur_facture"
+
+    annee: Mapped[int] = mapped_column(Integer, primary_key=True)
+    dernier: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+
+class CompteurAvoir(Base):
+    """Compteur de numerotation des avoirs, un par annee.
+
+    Sequence DISTINCTE des factures (numero AV<annee>-NNN), continue et sans
+    trou, attribuee a l'emission de l'avoir.
+    """
+
+    __tablename__ = "compteur_avoir"
 
     annee: Mapped[int] = mapped_column(Integer, primary_key=True)
     dernier: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

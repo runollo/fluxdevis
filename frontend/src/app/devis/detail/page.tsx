@@ -85,7 +85,7 @@ const STATUT_FACTURE: Record<string, string> = {
   annulee: "bg-orange-100 text-orange-700",
 };
 const TYPE_FACTURE: Record<string, string> = {
-  acompte: "Acompte", solde: "Solde", maintenance: "Maintenance",
+  acompte: "Acompte", solde: "Solde", maintenance: "Maintenance", avoir: "Avoir",
 };
 const CATEGORIES_DOC = [
   { value: "devis_envoye", label: "Devis envoyé" },
@@ -610,9 +610,9 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
                     <Link href={`/factures/confirmer?id=${f.id}&action=archiver&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
                       className="text-red-600 hover:underline text-sm font-medium">Supprimer</Link>
                   )}
-                  {(f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
+                  {f.type !== "avoir" && (f.statut === "emise" || f.statut === "payee" || f.statut === "en_retard") && (
                     <Link href={`/factures/confirmer?id=${f.id}&action=annuler&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`}
-                      className="text-orange-600 hover:underline text-sm font-medium">Annuler</Link>
+                      className="text-orange-600 hover:underline text-sm font-medium">Etablir un avoir</Link>
                   )}
                 </div>
               </li>

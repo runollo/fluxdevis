@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 interface FactureSummary {
   id: number; numero: string; type: string; statut: string;
   date_emission: string; date_echeance: string; objet: string; total_ttc: string;
+  pdf_fige_le?: string | null;
 }
 interface HistoriqueLigne {
   id: number | string; champ: string; ancienne_valeur: string | null; nouvelle_valeur: string | null;
@@ -69,6 +70,34 @@ export default async function EditerFacturePage(
           {params.suppr_msg}
         </div>
       )}
+
+      <div className="bg-white border rounded-lg p-4 mb-4">
+        <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Exemplaire legal (PDF)</h2>
+        {f.pdf_fige_le ? (
+          <p className="text-xs text-green-700 mb-3">
+            Document fige le {new Date(f.pdf_fige_le).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })} —
+            il ne change plus (exemplaire conserve tel quel, meme si la societe est modifiee).
+          </p>
+        ) : f.statut === "brouillon" ? (
+          <p className="text-xs text-gray-500 mb-3">
+            Le PDF sera fige automatiquement a l&apos;emission (attribution du n° legal).
+          </p>
+        ) : (
+          <p className="text-xs text-amber-700 mb-3">
+            Cette facture emise n&apos;a pas encore de PDF fige (conversion indisponible a l&apos;emission).
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <a href={`/api/factures/${f.id}/document?format=pdf`}
+            className="px-4 py-2 bg-[#1A355E] text-white rounded text-sm font-medium">
+            Telecharger le PDF{f.pdf_fige_le ? " (exemplaire legal)" : ""}
+          </a>
+          <a href={`/api/factures/${f.id}/document?format=docx`}
+            className="px-4 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
+            Version Word (modifiable)
+          </a>
+        </div>
+      </div>
 
       <div className="bg-white border rounded-lg p-4">
         <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">Numero & dates</h2>

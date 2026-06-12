@@ -44,6 +44,8 @@ class FactureSummary(BaseModel):
     date_echeance: date
     objet: str
     total_ttc: Decimal
+    # Exemplaire legal fige a l'emission (date du figement ; None si non fige).
+    pdf_fige_le: datetime | None = None
 
     model_config = {"from_attributes": True}
 

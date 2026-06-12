@@ -9,7 +9,7 @@ interface FactureSummary {
   date_emission: string; date_echeance: string; objet: string; total_ttc: string;
 }
 interface HistoriqueLigne {
-  id: number; champ: string; ancienne_valeur: string | null; nouvelle_valeur: string | null;
+  id: number | string; champ: string; ancienne_valeur: string | null; nouvelle_valeur: string | null;
   motif: string | null; auteur: string | null; cree_le: string | null;
 }
 
@@ -17,11 +17,19 @@ const LIBELLE_CHAMP: Record<string, string> = {
   numero: "Numero de facture",
   date_emission: "Date d'emission",
   date_echeance: "Date d'echeance",
+  emission: "Emission (n° legal)",
+  telechargement: "Telechargement",
+  envoi: "Envoi par email",
+  pdf_fige: "PDF fige (exemplaire legal)",
+  statut: "Changement de statut",
+  annulation_par_avoir: "Annulation par avoir",
 };
 function libelleChamp(c: string): string {
   if (c.startsWith("echeance[")) return `Echeance ${c}`;
   return LIBELLE_CHAMP[c] || c;
 }
+// Evenements (pas une modification de champ) : pas de rendu "avant -> apres".
+const EVENEMENTS = new Set(["emission", "telechargement", "envoi", "pdf_fige", "annulation_par_avoir"]);
 
 export default async function EditerFacturePage(
   { searchParams }: { searchParams: Promise<{ id?: string; retour?: string; suppr_msg?: string }> }
@@ -104,19 +112,25 @@ export default async function EditerFacturePage(
       {historique.length > 0 && (
         <div className="bg-white border rounded-lg p-4 mt-4">
           <h2 className="text-sm font-semibold text-gray-500 uppercase mb-3">
-            Historique des modifications ({historique.length})
+            Historique de la facture ({historique.length})
           </h2>
           <ul className="divide-y text-sm">
             {historique.map(h => (
               <li key={h.id} className="py-2">
                 <div className="flex flex-wrap items-baseline gap-x-2">
                   <span className="font-medium text-gray-800">{libelleChamp(h.champ)}</span>
-                  <span className="text-gray-400 line-through">{h.ancienne_valeur ?? "(vide)"}</span>
-                  <span className="text-gray-400">&rarr;</span>
-                  <span className="text-gray-800">{h.nouvelle_valeur ?? "(vide)"}</span>
+                  {EVENEMENTS.has(h.champ) ? (
+                    h.nouvelle_valeur && <span className="text-gray-600">{h.nouvelle_valeur}</span>
+                  ) : (
+                    <>
+                      <span className="text-gray-400 line-through">{h.ancienne_valeur ?? "(vide)"}</span>
+                      <span className="text-gray-400">&rarr;</span>
+                      <span className="text-gray-800">{h.nouvelle_valeur ?? "(vide)"}</span>
+                    </>
+                  )}
                 </div>
                 <div className="text-xs text-gray-400">
-                  {h.cree_le ? new Date(h.cree_le).toLocaleString("fr-FR") : ""}
+                  {h.cree_le ? new Date(h.cree_le).toLocaleString("fr-FR", { timeZone: "Europe/Paris" }) : ""}
                   {h.motif ? ` — ${h.motif}` : ""}
                 </div>
               </li>

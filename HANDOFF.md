@@ -1034,6 +1034,25 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
   recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
   ASK-VSE offert recurrent = 0).
 
+### Lot S2 : figement du document a l'emission + tracabilite par facture
+Resout le risque de fond (une facture emise etait regeneree a la volee -> changeait si la
+societe/le catalogue etait edite). Migration `b1c2d3e4f5a6` (head).
+- Modele : `Facture.pdf_fige` (LargeBinary) + `pdf_fige_le` ; `FactureEnvoi.format` (pdf/docx).
+- A l'EMISSION (`emettre_facture`) : genere le DOCX -> PDF et le STOCKE dans `pdf_fige`
+  (exemplaire legal fige). Si LibreOffice KO : emet quand meme (numero legal prime), PDF
+  regenerable via `POST /{id}/figer`.
+- Helper `_pdf_facture(id, db)` : sert `pdf_fige` s'il existe, sinon regenere (brouillon /
+  non fige). Utilise par le telechargement, l'envoi simple, la relance et l'envoi groupe ->
+  l'exemplaire envoye/telecharge ne change plus apres emission.
+- `telecharger_facture` : format=pdf sert le fige ; format=docx regenere (Word modifiable,
+  usage interne, PLUS l'exemplaire legal). Chaque telechargement est journalise (format).
+- Tracabilite : `GET /{id}/historique` fusionne le journal (emission, telechargements,
+  modifs, avoir) + les envois (`FactureEnvoi` avec destinataire/mode/format), tri
+  chronologique. Affiche sur `/factures/editer` (section "Historique de la facture"),
+  accessible en cliquant le NUMERO de facture (liste /factures + devis/detail).
+- Retroactif : `POST /{id}/figer` ; les 4 factures ASK-VSE emises ont ete figees.
+- LibreOffice est installe (/usr/bin/soffice) -> figement nominal OK.
+
 ### Audit stabilite/efficacite + Lot S1 "anti-crash & erreurs visibles" (frontend + backend)
 2e audit, oriente STABILITE/EFFICACITE (cf. [[feedback_priorite_stabilite]]). Les risques de
 CONCURRENCE/DoS/securite remontes par les agents sont ECARTES (outil local mono-utilisateur).

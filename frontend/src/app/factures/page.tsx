@@ -254,11 +254,11 @@ export default async function FacturesPage(
               <div key={f.id} className="bg-white border rounded-lg p-4">
                 <div className="flex items-start justify-between mb-2">
                   <div>
-                    {f.statut === "brouillon" ? (
-                      <p className="font-mono text-sm font-medium text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></p>
-                    ) : (
-                      <p className="font-mono text-sm font-medium">{f.numero}</p>
-                    )}
+                    <Link href={`/factures/editer?id=${f.id}&retour=/factures`} className="font-mono text-sm font-medium hover:underline">
+                      {f.statut === "brouillon"
+                        ? <span className="text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></span>
+                        : f.numero}
+                    </Link>
                     <p className="text-xs text-gray-500">{TYPE_LABELS[f.type] || f.type}</p>
                   </div>
                   <div className="text-right">
@@ -394,9 +394,11 @@ export default async function FacturesPage(
                 {factures.map(f => (
                   <tr key={f.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3 font-mono font-medium align-top">
-                      {f.statut === "brouillon" ? (
-                        <span className="text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></span>
-                      ) : f.numero}
+                      <Link href={`/factures/editer?id=${f.id}&retour=/factures`} className="hover:underline">
+                        {f.statut === "brouillon"
+                          ? <span className="text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></span>
+                          : f.numero}
+                      </Link>
                       <p className="text-[11px] text-gray-600 font-sans max-w-[220px] truncate">{f.objet}</p>
                     </td>
                     <td className="px-4 py-3 align-top">{f.client || "—"}</td>

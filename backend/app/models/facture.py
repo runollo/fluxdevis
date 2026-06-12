@@ -2,7 +2,7 @@
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
-from sqlalchemy import String, Numeric, Integer, Date, DateTime, ForeignKey, Text, Enum as SAEnum
+from sqlalchemy import String, Numeric, Integer, Date, DateTime, ForeignKey, Text, LargeBinary, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 import enum
 
@@ -68,6 +68,13 @@ class Facture(Base, TimestampMixin, SoftDeleteMixin):
     date_paiement: Mapped[date | None] = mapped_column(Date)
     moyen_paiement: Mapped[str | None] = mapped_column(String(50))
 
+    # Document fige a l'emission : exemplaire legal du PDF, conserve tel quel.
+    # NULL tant que la facture est en brouillon (ou si la conversion PDF a echoue
+    # a l'emission -> regenerable). Une fois present, il est resservi a chaque
+    # telechargement/envoi (le document ne change plus, meme si la societe est editee).
+    pdf_fige: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    pdf_fige_le: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # Relations
     devis: Mapped["Devis"] = relationship(back_populates="factures")
     lignes: Mapped[list["FactureLigne"]] = relationship(
@@ -97,6 +104,8 @@ class FactureEnvoi(Base):
     # "client" (envoi direct) ou "expediteur" (a soi-meme, pour transferer).
     mode: Mapped[str] = mapped_column(String(20))
     destinataire: Mapped[str] = mapped_column(String(200))
+    # Format de la piece jointe envoyee ("pdf" en pratique).
+    format: Mapped[str] = mapped_column(String(8), default="pdf", server_default="pdf")
 
     facture: Mapped["Facture"] = relationship(back_populates="envois")
 

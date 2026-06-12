@@ -250,16 +250,13 @@ async def envoyer_factures_lot(data: EnvoiLotRequest, db: AsyncSession = Depends
         if not (devis_client and devis_client.client_email):
             raise HTTPException(400, "Le client n'a pas d'adresse email enregistree.")
 
-    # Generation des PDF une seule fois (reutilises pour les deux emails eventuels).
+    # PDF (figes a l'emission de preference) une seule fois, reutilises pour les
+    # deux emails eventuels.
     factures_tri = sorted(factures, key=lambda x: (x.date_emission, x.id))
     pjs: list[PieceJointe] = []
     for f in factures_tri:
-        _, _, _, buf, filename = await _generer_facture_docx(f.id, db)
-        try:
-            pdf = await docx_vers_pdf(buf.getvalue())
-        except PdfError as e:
-            raise HTTPException(503, str(e))
-        pjs.append(PieceJointe(filename.rsplit(".", 1)[0] + ".pdf", pdf, "application/pdf"))
+        pdf, pdf_name = await _pdf_facture(f.id, db)
+        pjs.append(PieceJointe(pdf_name, pdf, "application/pdf"))
 
     cfg = await smtp_config(db)
     expediteur = cfg.sender
@@ -280,7 +277,7 @@ async def envoyer_factures_lot(data: EnvoiLotRequest, db: AsyncSession = Depends
         except EmailError as e:
             raise HTTPException(400, str(e))
         for f in factures:
-            db.add(FactureEnvoi(facture_id=f.id, mode=mode, destinataire=destinataire))
+            db.add(FactureEnvoi(facture_id=f.id, mode=mode, destinataire=destinataire, format="pdf"))
         envois.append({"mode": mode, "destinataire": destinataire})
 
     if data.a_moi:
@@ -430,22 +427,45 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     return facture, devis, societe, buf, filename
 
 
-@router.get("/{facture_id}/document")
-async def telecharger_facture(
-    facture_id: int, format: str = "pdf", db: AsyncSession = Depends(get_db)
-):
-    """Genere et retourne la facture. format=pdf (defaut, non modifiable) ou docx."""
+async def _pdf_facture(facture_id: int, db: AsyncSession) -> tuple[bytes, str]:
+    """Retourne (pdf_bytes, nom_fichier). Sert le PDF FIGE a l'emission s'il
+    existe (exemplaire legal immuable), sinon regenere a la volee (brouillon ou
+    facture non encore figee)."""
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    prefixe = "Avoir" if facture.type == TypeFacture.AVOIR else "Facture"
+    nom = f"{prefixe}_{facture.numero}.pdf"
+    if facture.pdf_fige:
+        return bytes(facture.pdf_fige), nom
     _, _, _, buf, filename = await _generer_facture_docx(facture_id, db)
-    if format == "docx":
-        return StreamingResponse(
-            buf, media_type=_DOCX_CT,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
     try:
         pdf = await docx_vers_pdf(buf.getvalue())
     except PdfError as e:
         raise HTTPException(503, str(e))
-    pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
+    return pdf, filename.rsplit(".", 1)[0] + ".pdf"
+
+
+@router.get("/{facture_id}/document")
+async def telecharger_facture(
+    facture_id: int, format: str = "pdf", db: AsyncSession = Depends(get_db)
+):
+    """Retourne la facture. format=pdf (defaut : exemplaire legal fige a
+    l'emission) ou docx (Word regenere, modifiable, usage interne). Chaque
+    telechargement est trace dans l'historique de la facture."""
+    if format == "docx":
+        _, _, _, buf, filename = await _generer_facture_docx(facture_id, db)
+        journal_svc.enregistrer(db, "facture", facture_id, "telechargement", None, "Word",
+                                motif="Telechargement du document")
+        await db.commit()
+        return StreamingResponse(
+            buf, media_type=_DOCX_CT,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    pdf, pdf_name = await _pdf_facture(facture_id, db)
+    journal_svc.enregistrer(db, "facture", facture_id, "telechargement", None, "PDF",
+                            motif="Telechargement du document")
+    await db.commit()
     return Response(
         content=pdf, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{pdf_name}"'},
@@ -503,10 +523,14 @@ async def envoyer_facture_email(
     sujet, html = construire_email_facture(facture, devis, societe, params)
     if mode == "expediteur":
         sujet = f"[A transferer] {sujet}"
-    try:
-        pdf = await docx_vers_pdf(buf.getvalue())
-    except PdfError as e:
-        raise HTTPException(503, str(e))
+    # PJ = PDF FIGE a l'emission s'il existe (exemplaire legal), sinon conversion.
+    if facture.pdf_fige:
+        pdf = bytes(facture.pdf_fige)
+    else:
+        try:
+            pdf = await docx_vers_pdf(buf.getvalue())
+        except PdfError as e:
+            raise HTTPException(503, str(e))
     pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
     email = Email(
         destinataire=destinataire,
@@ -522,7 +546,7 @@ async def envoyer_facture_email(
         raise HTTPException(400, str(e))
 
     # Trace l'envoi (historique + alerte au renvoi).
-    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire))
+    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire, format="pdf"))
     await db.commit()
 
     return {"ok": True, "id": resultat.get("id"), "destinataire": destinataire, "mode": mode}
@@ -613,10 +637,13 @@ async def relancer_facture(
     sujet, html = construire_email_relance(facture, devis, societe, params, jr)
     if mode == "expediteur":
         sujet = f"[A transferer] {sujet}"
-    try:
-        pdf = await docx_vers_pdf(buf.getvalue())
-    except PdfError as e:
-        raise HTTPException(503, str(e))
+    if facture.pdf_fige:
+        pdf = bytes(facture.pdf_fige)
+    else:
+        try:
+            pdf = await docx_vers_pdf(buf.getvalue())
+        except PdfError as e:
+            raise HTTPException(503, str(e))
     pdf_name = filename.rsplit(".", 1)[0] + ".pdf"
     email = Email(
         destinataire=destinataire, sujet=sujet, html=html,
@@ -628,7 +655,7 @@ async def relancer_facture(
     except EmailError as e:
         raise HTTPException(400, str(e))
 
-    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire))
+    db.add(FactureEnvoi(facture_id=facture.id, mode=mode, destinataire=destinataire, format="pdf"))
     await db.commit()
     return {"ok": True, "destinataire": destinataire, "mode": mode, "relance": True}
 
@@ -660,6 +687,43 @@ async def emettre_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
         ancien, facture.numero,
         motif="Emission : attribution du numero legal",
     )
+    # Figer le PDF : exemplaire legal conserve tel quel (le document ne changera
+    # plus, meme si la societe/le catalogue est edite ensuite). Le numero legal
+    # vient d'etre pose -> il figure bien sur le PDF (autoflush avant la lecture).
+    # Si la conversion echoue (LibreOffice indisponible), on emet quand meme : le
+    # numero legal prime ; le PDF reste regenerable (cf. POST /{id}/figer).
+    try:
+        _, _, _, buf, _ = await _generer_facture_docx(facture.id, db)
+        facture.pdf_fige = await docx_vers_pdf(buf.getvalue())
+        facture.pdf_fige_le = datetime.now(timezone.utc)
+    except PdfError:
+        journal_svc.enregistrer(
+            db, "facture", facture.id, "pdf_fige", None, "echec",
+            motif="PDF non fige a l'emission (LibreOffice indisponible) - a regenerer",
+        )
+    await db.commit()
+    await db.refresh(facture)
+    return facture
+
+
+@router.post("/{facture_id}/figer", response_model=FactureSummary)
+async def figer_pdf_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
+    """(Re)genere et fige le PDF d'une facture deja emise dont le PDF n'a pas pu
+    etre fige a l'emission (LibreOffice momentanement indisponible). Sert aussi a
+    figer retroactivement des factures emises avant cette fonctionnalite."""
+    facture = await db.get(Facture, facture_id)
+    if not facture:
+        raise HTTPException(404, "Facture non trouvee")
+    if facture.statut == StatutFacture.BROUILLON:
+        raise HTTPException(400, "Une facture en brouillon n'a pas de PDF fige (le figement a lieu a l'emission).")
+    _, _, _, buf, _ = await _generer_facture_docx(facture.id, db)
+    try:
+        facture.pdf_fige = await docx_vers_pdf(buf.getvalue())
+    except PdfError as e:
+        raise HTTPException(503, str(e))
+    facture.pdf_fige_le = datetime.now(timezone.utc)
+    journal_svc.enregistrer(db, "facture", facture.id, "pdf_fige", None, "ok",
+                            motif="PDF fige (regeneration)")
     await db.commit()
     await db.refresh(facture)
     return facture
@@ -982,5 +1046,23 @@ async def modifier_echeances_facture(
 
 @router.get("/{facture_id}/historique")
 async def historique_facture(facture_id: int, db: AsyncSession = Depends(get_db)):
-    """Journal des modifications sensibles de la facture."""
-    return await journal_svc.historique(db, "facture", facture_id)
+    """Historique COMPLET de la facture : journal (emission, telechargements,
+    modifications, avoir) + envois email, fusionnes par ordre chronologique
+    decroissant. Trace de tout ce qui a ete fait sur la facture."""
+    journal = await journal_svc.historique(db, "facture", facture_id)
+    envois = (await db.execute(
+        select(FactureEnvoi).where(FactureEnvoi.facture_id == facture_id)
+    )).scalars().all()
+    for e in envois:
+        dest = "au client" if e.mode == "client" else "a moi (transfert)"
+        journal.append({
+            "id": f"envoi-{e.id}",
+            "champ": "envoi",
+            "ancienne_valeur": None,
+            "nouvelle_valeur": f"{dest} — {e.destinataire} ({(e.format or 'pdf').upper()})",
+            "motif": "Envoi par email",
+            "auteur": None,
+            "cree_le": e.date_envoi.isoformat() if e.date_envoi else None,
+        })
+    journal.sort(key=lambda x: x["cree_le"] or "", reverse=True)
+    return journal

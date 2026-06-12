@@ -566,11 +566,11 @@ export default async function DevisDetailPage({ searchParams }: { searchParams: 
             {d.factures.map(f => (
               <li key={f.id} className="py-2 flex items-center justify-between gap-2">
                 <div className="min-w-0">
-                  {f.statut === "brouillon" ? (
-                    <p className="font-mono text-sm truncate text-gray-400">{f.numero} <span className="not-italic text-[10px]">(provisoire)</span></p>
-                  ) : (
-                    <p className="font-mono text-sm truncate">{f.numero}</p>
-                  )}
+                  <Link href={`/factures/editer?id=${f.id}&retour=${encodeURIComponent(`/devis/detail?id=${d.id}`)}`} className="font-mono text-sm truncate hover:underline block">
+                    {f.statut === "brouillon"
+                      ? <span className="text-gray-400">{f.numero} <span className="not-italic text-[10px]">(provisoire)</span></span>
+                      : f.numero}
+                  </Link>
                   <p className="text-xs text-gray-400">{TYPE_FACTURE[f.type] || f.type}</p>
                   <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${STATUT_FACTURE[f.statut] || "bg-gray-100 text-gray-700"}`}>{f.statut}</span>
                 </div>

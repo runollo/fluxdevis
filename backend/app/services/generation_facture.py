@@ -99,9 +99,12 @@ class FactureData:
     @property
     def montant_brut_ht(self) -> Decimal:
         """Montant HT avant remise (prix catalogue). Reconstitue depuis le net :
-        net = brut x (1 - remise_pct/100)."""
+        net = brut x (1 - remise_pct/100). Garde-fou : une remise >= 100 % rendrait
+        le diviseur nul/negatif -> on retombe sur le net (pas de crash)."""
         if self.a_remise:
-            return _q(self.montant_ht / (D("1") - self.remise_pct / D("100")))
+            diviseur = D("1") - self.remise_pct / D("100")
+            if diviseur > 0:
+                return _q(self.montant_ht / diviseur)
         return self.montant_ht
 
     @property

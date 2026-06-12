@@ -300,19 +300,23 @@ export async function saveDevis(formData: FormData) {
   const resultJson = formData.get("result_json") as string;
   if (!resultJson) redirect("/simulateur");
 
-  const result = JSON.parse(resultJson);
-
-  // Construire les options selectionnees pour le devis
-  const optionsJson = formData.get("options_json") as string;
-  const options = optionsJson ? JSON.parse(optionsJson) : [];
-
-  // Prestations sur mesure (persistees dans le devis)
-  const prestationsJson = formData.get("prestations_json") as string;
-  const prestations = prestationsJson ? JSON.parse(prestationsJson) : [];
-
-  // Articles offerts (options/prestations offertes)
-  const articlesJson = formData.get("articles_offerts_json") as string;
-  const articles_offerts: Array<Record<string, unknown>> = articlesJson ? JSON.parse(articlesJson) : [];
+  // Parsing tolerant : si un des JSON du formulaire est corrompu/tronque, on
+  // renvoie au simulateur avec un message clair plutot que de crasher l'action.
+  let result: Record<string, unknown>;
+  let options: Array<Record<string, unknown>>;
+  let prestations: Array<Record<string, unknown>>;
+  let articles_offerts: Array<Record<string, unknown>>;
+  try {
+    result = JSON.parse(resultJson);
+    const optionsJson = formData.get("options_json") as string;
+    options = optionsJson ? JSON.parse(optionsJson) : [];
+    const prestationsJson = formData.get("prestations_json") as string;
+    prestations = prestationsJson ? JSON.parse(prestationsJson) : [];
+    const articlesJson = formData.get("articles_offerts_json") as string;
+    articles_offerts = articlesJson ? JSON.parse(articlesJson) : [];
+  } catch {
+    redirect(ajouterParam("/simulateur", "msg", "Donnees du simulateur illisibles, veuillez relancer la simulation."));
+  }
 
   // Garde-fou recurrent : offrir du recurrent (mensuel) est exceptionnel.
   // La case "confirme_recurrent" est requise cote navigateur ; backstop serveur ici.
@@ -341,13 +345,13 @@ export async function saveDevis(formData: FormData) {
     params_doc: paramsDoc,
     mode_reglement: formData.get("mode") || "Comptant",
     plan_paiement: formData.get("plan") || "100%",
-    prix_vente_final: result.prix_vente_final,
+    prix_vente_final: result.prix_vente_final || "0",
     total_prestations_ht: result.total_prestations_vente || "0",
     total_options_setup_ht: result.total_options_setup_vente || "0",
     total_pack_maintenance_ht: result.total_pack_maintenance_vente || "0",
     total_options_recurrent_ht: result.total_options_recurrent_vente || "0",
     total_offerts_recurrent_ht: String(
-      articles_offerts.filter((a) => a.est_setup === false).reduce((s, a) => s + Number(a.prix_vente), 0)
+      articles_offerts.filter((a) => a.est_setup === false).reduce((s, a) => s + (Number(a.prix_vente) || 0), 0)
     ),
     remise_pct_setup: formData.get("remise_setup") || "0",
     remise_pct_recurrent: formData.get("remise_recurrent") || "0",

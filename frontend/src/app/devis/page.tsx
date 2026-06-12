@@ -2,6 +2,7 @@ import { serverFetch } from "@/lib/api";
 import { genererFactures, restaurerDevis } from "@/lib/actions";
 import Link from "next/link";
 import Flash from "@/components/Flash";
+import ErreurChargement from "@/components/ErreurChargement";
 
 export const dynamic = "force-dynamic";
 
@@ -39,9 +40,10 @@ export default async function DevisPage(
   qs.set("limit", String(PAR_PAGE));
 
   let devisList: Devis[] = [];
+  let erreurChargement = false;
   try {
     devisList = await serverFetch<Devis[]>(`/devis/?${qs.toString()}`);
-  } catch {}
+  } catch { erreurChargement = true; }
 
   // Conserve archives/q dans les liens de pagination
   const lienPage = (nouveauSkip: number) => {
@@ -80,6 +82,7 @@ export default async function DevisPage(
         </div>
       </div>
 
+      {erreurChargement && <ErreurChargement quoi="les devis" />}
       {params.suppr_msg && <Flash type="error" param="suppr_msg" message={params.suppr_msg} />}
 
       {/* Recherche */}

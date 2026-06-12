@@ -4,6 +4,7 @@ import Link from "next/link";
 import EnvoiGroupe from "./EnvoiGroupe";
 import SubmitButton from "@/components/SubmitButton";
 import Flash from "@/components/Flash";
+import ErreurChargement from "@/components/ErreurChargement";
 
 export const dynamic = "force-dynamic";
 
@@ -108,9 +109,10 @@ export default async function FacturesPage(
   qs.set("limit", String(PAR_PAGE));
 
   let factures: Facture[] = [];
+  let erreurChargement = false;
   try {
     factures = await serverFetch<Facture[]>(`/factures/?${qs.toString()}`);
-  } catch {}
+  } catch { erreurChargement = true; }
 
   // Garde-fou : l'envoi direct au client n'est propose que s'il est active dans Parametres.
   let envoiClientActif = false;
@@ -181,6 +183,7 @@ export default async function FacturesPage(
         </div>
       </div>
 
+      {erreurChargement && <ErreurChargement quoi="les factures" />}
       {params.suppr_msg && <Flash type="error" param="suppr_msg" message={params.suppr_msg} />}
       {params.envoye === "1" && <Flash param="envoye" message="Facture envoyee par email au client." />}
       {params.envoye === "moi" && <Flash param="envoye" message="Facture envoyee sur votre adresse (a transferer)." />}

@@ -1034,6 +1034,26 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
   recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
   ASK-VSE offert recurrent = 0).
 
+### Audit stabilite/efficacite + Lot S1 "anti-crash & erreurs visibles" (frontend + backend)
+2e audit, oriente STABILITE/EFFICACITE (cf. [[feedback_priorite_stabilite]]). Les risques de
+CONCURRENCE/DoS/securite remontes par les agents sont ECARTES (outil local mono-utilisateur).
+Risques retenus : figement des documents emis (= Lot S2, a discuter avec Bruno), crashs
+d'affichage, erreurs backend invisibles, oublis (maintenance mensuelle manuelle = Lot E1).
+Lot S1 livre :
+- `src/lib/format.ts` : helpers `eur`/`dateFr`/`num` tolerants (valeur invalide -> "—" / 0,
+  plus de "NaN EUR" ni "Invalid Date").
+- `src/app/error.tsx` (error boundary GLOBAL) + `src/app/not-found.tsx` (404 propre).
+  /!\ PIEGE NEXT 16 : la prop de reprise de error.tsx est `unstable_retry` (PAS `reset`) ;
+  une signature erronee CASSE le routing (toutes les routes -> 404 avec contenu mixte).
+  Toujours verifier les conventions dans node_modules/next/dist/docs (cf. AGENTS.md).
+- Garde-fou division par zero si remise >= 100 % (generation_facture.montant_brut_ht).
+- Erreurs backend VISIBLES sur /devis et /factures (composant `ErreurChargement` au lieu
+  d'un catch silencieux -> liste vide muette). /clients et dashboard geraient deja.
+- `saveDevis` (actions.ts) : parsing JSON tolerant (-> message + retour simulateur si
+  corrompu) + montants safe (prix_vente_final, reduce offerts).
+RESTE Lot S1 (optionnel) : blinder les .map de devis/detail (couverts par error.tsx en
+filet) ; etendre SubmitButton aux formulaires restants.
+
 ### Audit UI/UX + Lot A "quick wins" (frontend)
 Audit complet realise (3 axes : navigation/listes, formulaires/flux, design system/a11y).
 Constat : app fonctionnelle mais design system immature (couleur #1A355E en dur ~80x,

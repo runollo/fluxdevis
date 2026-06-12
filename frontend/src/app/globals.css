@@ -1,1 +1,24 @@
 @import "tailwindcss";
+
+/* Focus clavier visible sur tous les elements interactifs (accessibilite WCAG
+   2.4.7). Cible :focus-visible pour ne pas afficher l'anneau au clic souris. */
+@layer base {
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid #1a355e;
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+}
+
+@layer utilities {
+  /* Marge basse pour la bottom-nav mobile sur les ecrans a encoche (iPhone). */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}

@@ -58,7 +58,7 @@ export default async function DevisPage(
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
           {corbeille ? "Corbeille — devis" : "Devis"} ({devisList.length})
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {corbeille ? (
             <Link href="/devis" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
               Retour aux devis

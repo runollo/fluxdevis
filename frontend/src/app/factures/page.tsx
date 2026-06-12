@@ -409,7 +409,7 @@ export default async function FacturesPage(
                       {f.statut === "brouillon" ? (
                         <span className="text-gray-400">{f.numero} <span className="text-[10px]">(provisoire)</span></span>
                       ) : f.numero}
-                      <p className="text-[11px] text-gray-400 font-sans max-w-[220px] truncate">{f.objet}</p>
+                      <p className="text-[11px] text-gray-600 font-sans max-w-[220px] truncate">{f.objet}</p>
                     </td>
                     <td className="px-4 py-3 align-top">{f.client || "—"}</td>
                     <td className="px-4 py-3 align-top">

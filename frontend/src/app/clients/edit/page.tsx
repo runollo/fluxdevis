@@ -1,5 +1,6 @@
 import { serverFetch } from "@/lib/api";
 import { saveClient } from "@/lib/actions";
+import SubmitButton from "@/components/SubmitButton";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -131,10 +132,10 @@ export default async function ClientEditPage({ searchParams }: { searchParams: P
 
         {/* Actions */}
         <div className="flex gap-3 pt-2">
-          <button type="submit"
+          <SubmitButton pendingLabel="Enregistrement…"
             className="flex-1 sm:flex-none px-6 py-3 bg-[#1A355E] text-white rounded-lg font-medium text-sm">
             {client ? "Enregistrer" : "Creer le client"}
-          </button>
+          </SubmitButton>
           <Link href="/clients"
             className="flex-1 sm:flex-none px-6 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium text-sm text-center">
             Annuler

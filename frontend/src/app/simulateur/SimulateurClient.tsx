@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { saveDevis } from "@/lib/actions";
+import SubmitButton from "@/components/SubmitButton";
 import type { Client } from "@/lib/api";
 
 function eur(v: number | string) {
@@ -666,9 +667,9 @@ export default function SimulateurClient({
                     <span>Je confirme offrir du RECURRENT (mensuel) : {offertsRecurrent.map(a => a.designation).join(", ")}.</span>
                   </label>
                 )}
-                <button type="submit" className="w-full py-3 bg-green-700 text-white rounded-lg font-medium text-sm">
+                <SubmitButton pendingLabel="Enregistrement…" className="w-full py-3 bg-green-700 text-white rounded-lg font-medium text-sm">
                   {edition ? (creerNouvelleVersion ? "Creer la nouvelle version" : "Enregistrer les modifications") : "Enregistrer le devis"}
-                </button>
+                </SubmitButton>
               </form>
             </div>
           )}

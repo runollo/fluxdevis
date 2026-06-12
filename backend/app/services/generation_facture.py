@@ -26,6 +26,14 @@ def _q(val) -> Decimal:
     return Decimal(str(val)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _fmt_pct(pct: Decimal) -> str:
+    """Formate un pourcentage sans zeros decimaux superflus (30.00 -> '30 %')."""
+    s = format(pct, "f")
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return f"{s} %"
+
+
 class FactureData:
     """Donnees necessaires pour generer une facture."""
 
@@ -64,6 +72,11 @@ class FactureData:
         self.quantite: str = kwargs.get("quantite", "1")
         self.prix_unitaire_ht: Decimal = D(str(kwargs.get("prix_unitaire_ht", 0)))
         self.montant_ht: Decimal = D(str(kwargs.get("montant_ht", 0)))
+        # Remise commerciale (en %, ex 30.00) consentie sur cette prestation. Le
+        # montant_ht est le NET (apres remise). On reconstitue le brut catalogue
+        # pour materialiser la remise sur la facture (coherence avec le devis +
+        # mention obligatoire art. L441-9 C. com).
+        self.remise_pct: Decimal = D(str(kwargs.get("remise_pct", 0) or 0))
 
         # References
         self.devis_ref: str = kwargs.get("devis_ref", "")
@@ -78,6 +91,22 @@ class FactureData:
         # Echeancier (acompte)
         self.echeances: list[dict] = kwargs.get("echeances", [])
         self.idx_echeance: int = kwargs.get("idx_echeance", 0)
+
+    @property
+    def a_remise(self) -> bool:
+        return self.remise_pct > 0
+
+    @property
+    def montant_brut_ht(self) -> Decimal:
+        """Montant HT avant remise (prix catalogue). Reconstitue depuis le net :
+        net = brut x (1 - remise_pct/100)."""
+        if self.a_remise:
+            return _q(self.montant_ht / (D("1") - self.remise_pct / D("100")))
+        return self.montant_ht
+
+    @property
+    def montant_remise(self) -> Decimal:
+        return _q(self.montant_brut_ht - self.montant_ht)
 
     @property
     def montant_tva(self) -> Decimal:
@@ -188,8 +217,11 @@ def _add_detail(doc, data):
                   align=WD_ALIGN_PARAGRAPH.CENTER)
 
     row = tbl.rows[1]
-    vals = [data.designation, data.quantite, fmt_eur(data.prix_unitaire_ht),
-            "20 %", fmt_eur(data.montant_ht)]
+    # En presence d'une remise, la ligne affiche le prix CATALOGUE (brut) ; la
+    # remise et le net apparaissent dans le bloc des totaux.
+    pu = data.montant_brut_ht if data.a_remise else data.prix_unitaire_ht
+    mt = data.montant_brut_ht if data.a_remise else data.montant_ht
+    vals = [data.designation, data.quantite, fmt_eur(pu), "20 %", fmt_eur(mt)]
     aligns = [WD_ALIGN_PARAGRAPH.LEFT, WD_ALIGN_PARAGRAPH.CENTER,
               WD_ALIGN_PARAGRAPH.RIGHT, WD_ALIGN_PARAGRAPH.CENTER,
               WD_ALIGN_PARAGRAPH.RIGHT]
@@ -199,21 +231,30 @@ def _add_detail(doc, data):
 
 
 def _add_totaux(doc, data):
-    tbl = doc.add_table(rows=4, cols=2)
-    tbl_no_spacing(tbl)
-    full_tbl_borders(tbl)
-
     net_label = "Net \u00e0 porter au cr\u00e9dit" if data.type_facture == "avoir" else "Net \u00e0 payer"
-    lines = [
+    lines = []
+    # Materialisation de la remise commerciale (prix catalogue -> remise -> net),
+    # alignee sur le devis et conforme a l'art. L441-9 C. com.
+    if data.a_remise:
+        lines.append(("Sous-total HT (avant remise)", fmt_eur(data.montant_brut_ht)))
+        lines.append((f"Remise commerciale (\u2212 {_fmt_pct(data.remise_pct)})",
+                      "\u2212 " + fmt_eur(data.montant_remise)))
+    lines += [
         ("Total HT", fmt_eur(data.montant_ht)),
         ("TVA 20 %", fmt_eur(data.montant_tva)),
         ("Total TTC", fmt_eur(data.montant_ttc)),
         (net_label, fmt_eur(data.montant_ttc)),
     ]
+
+    tbl = doc.add_table(rows=len(lines), cols=2)
+    tbl_no_spacing(tbl)
+    full_tbl_borders(tbl)
+
+    last_idx = len(lines) - 1
     for i, (label, val) in enumerate(lines):
         cell_w(tbl.rows[i].cells[0], 14)
         cell_w(tbl.rows[i].cells[1], 4)
-        is_last = i == 3
+        is_last = i == last_idx
         if is_last:
             cell_bg(tbl.rows[i].cells[0], HEX_NAVY)
             cell_bg(tbl.rows[i].cells[1], HEX_NAVY)

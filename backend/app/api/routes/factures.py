@@ -279,6 +279,15 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     if facture.type == TypeFacture.MAINTENANCE and facture.periode_debut and facture.periode_fin:
         periode = f"{facture.periode_debut.strftime('%d/%m/%Y')} au {facture.periode_fin.strftime('%d/%m/%Y')}"
 
+    # Remise commerciale a materialiser sur la facture (le montant stocke est le
+    # net) : remise setup pour acompte/solde, remise recurrent pour la maintenance.
+    remise_pct = Decimal("0")
+    if devis:
+        if facture.type in (TypeFacture.ACOMPTE, TypeFacture.SOLDE):
+            remise_pct = devis.remise_pct_setup or Decimal("0")
+        elif facture.type == TypeFacture.MAINTENANCE:
+            remise_pct = devis.remise_pct_recurrent or Decimal("0")
+
     data = FactureData(
         numero=facture.numero,
         type_facture=facture.type.value,
@@ -313,6 +322,7 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
         est_shopify=devis.est_shopify if devis else False,
         echeances=ech_rows,
         idx_echeance=idx_echeance,
+        remise_pct=remise_pct,
     )
 
     buf = generer_facture(data)

@@ -56,6 +56,12 @@ schema conforme (cf. art. 289 CGI ci-dessous) ; schema B ecarte. Detail complet 
    et 15/05 par defaut ; n'apparaissent PAS sur le document, suivi interne) ; verifier les
    PDF puis envoyer.
 
+7. REMISE COMMERCIALE materialisee sur les factures (setup ET maintenance) : le montant
+   stocke est le NET ; le document affiche desormais "Sous-total HT (avant remise)" = brut
+   catalogue, "Remise commerciale (− X %)", puis "Total HT" net. Brut reconstitue a la volee
+   = net / (1 - remise_pct/100). Aligne sur le devis (qui valorise deja la remise) et conforme
+   art. L441-9 C. com. Calcul a la generation -> aucune regeneration des factures existantes.
+
 /!\ SUJET DE FOND non resolu : FluxDevis ne FIGE pas le document emis (regenere a la volee
 depuis la base) -> une facture deja envoyee peut changer si les donnees bougent. Chantier
 separe (snapshot / archivage du PDF a l'emission).
@@ -1015,6 +1021,18 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
 - `generer_facture_maintenance` : objet = composantes recurrentes du devis (DevisOptionLigne
   avec `prix_mensuel_ht > 0` = pack + options recurrentes payantes), noms catalogue joints
   par " + ", + periode. Fallback "Maintenance du site internet / de la boutique en ligne".
+
+### Remise commerciale sur les factures (generation_facture.py + factures.py)
+- `FactureData.remise_pct` (% ex 30.00) + proprietes `montant_brut_ht` (= net / (1 -
+  remise_pct/100)) et `montant_remise`. `_add_detail` affiche le prix CATALOGUE (brut) dans
+  la ligne quand il y a remise ; `_add_totaux` insere "Sous-total HT (avant remise)" et
+  "Remise commerciale (− X %)" avant "Total HT" (net). Helper `_fmt_pct`.
+- `_generer_facture_docx` : `remise_pct` = `devis.remise_pct_setup` pour acompte/solde,
+  `devis.remise_pct_recurrent` pour la maintenance, 0 pour l'avoir.
+- Base TVA = net (apres remise). Calcul a la volee : pas de colonne ni de regeneration.
+- Limite connue : le brut reconstitue suppose net = brut x (1 - remise_pct) ; si des OFFERTS
+  recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
+  ASK-VSE offert recurrent = 0).
 
 ### Operation donnees ASK-VSE (devis 16)
 Rien n'avait ete envoye au client ni saisi dans Indy -> remise au propre autorisee.

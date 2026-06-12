@@ -21,7 +21,9 @@ from app.services import journal as journal_svc
 from app.services.export_excel import export_factures_xlsx
 from app.services.email import Email, PieceJointe, envoyer_email, email_actif, EmailError, adresse_expediteur
 from app.services.parametres import smtp_config, charger as charger_parametres
-from app.services.email_modeles import construire_email_facture, construire_email_relance
+from app.services.email_modeles import (
+    construire_email_facture, construire_email_relance, construire_email_groupe,
+)
 from app.services.pdf import docx_vers_pdf, PdfError
 from app.services import relances as relances_svc
 from app.core.config import get_settings
@@ -57,6 +59,7 @@ class FactureListItem(BaseModel):
     objet: str
     total_ttc: Decimal
     devis_id: int | None = None
+    client_id: int | None = None
     client: str | None = None
     projet_ref: str | None = None
     projet_nom: str | None = None
@@ -139,6 +142,7 @@ async def list_factures(
             id=f.id, numero=f.numero, type=f.type, statut=f.statut,
             date_emission=f.date_emission, date_echeance=f.date_echeance,
             objet=f.objet, total_ttc=f.total_ttc, devis_id=f.devis_id,
+            client_id=f.devis.client_id if f.devis else None,
             client=f.devis.client_raison_sociale if f.devis else None,
             projet_ref=f.devis.reference if f.devis else None,
             projet_nom=f.devis.offre_nom if f.devis else None,
@@ -194,6 +198,101 @@ async def next_numero(db: AsyncSession = Depends(get_db)):
         "compteur": n + 1,
         "exemple": format_numero_facture("XXXX", today, n + 1),
     }
+
+
+class EnvoiLotRequest(BaseModel):
+    facture_ids: list[int]
+    au_client: bool = False
+    a_moi: bool = True
+
+
+@router.post("/envoyer-lot")
+async def envoyer_factures_lot(data: EnvoiLotRequest, db: AsyncSession = Depends(get_db)):
+    """Envoie plusieurs factures (PDF) en pieces jointes dans un seul email.
+
+    - a_moi : envoi a l'adresse expediteur (transfert au comptable).
+    - au_client : envoi au client ; exige que TOUTES les factures soient du MEME
+      client et que l'envoi direct au client soit active.
+    "Les deux" (au_client + a_moi) -> deux emails distincts.
+    Declaree AVANT GET /{facture_id} pour ne pas etre capturee par le convertisseur int.
+    """
+    if not await email_actif(db):
+        raise HTTPException(400, "Envoi email non configure (voir Parametres).")
+    if not data.facture_ids:
+        raise HTTPException(400, "Aucune facture selectionnee.")
+    if not (data.au_client or data.a_moi):
+        raise HTTPException(400, "Choisissez au moins un destinataire.")
+
+    res = await db.execute(
+        select(Facture)
+        .where(Facture.id.in_(data.facture_ids), Facture.archived_at.is_(None))
+        .options(selectinload(Facture.devis))
+    )
+    factures = res.scalars().all()
+    if len(factures) != len(set(data.facture_ids)):
+        raise HTTPException(404, "Une ou plusieurs factures sont introuvables ou archivees.")
+    if any(f.statut == StatutFacture.BROUILLON for f in factures):
+        raise HTTPException(400, "Seules les factures emises peuvent etre envoyees (brouillon exclu).")
+
+    societe = (await db.execute(select(Societe).limit(1))).scalar_one_or_none()
+    params = await charger_parametres(db)
+
+    devis_client = None
+    if data.au_client:
+        client_ids = {f.devis.client_id for f in factures if f.devis}
+        if len(client_ids) != 1:
+            raise HTTPException(
+                400, "Envoi au client impossible : les factures appartiennent a des clients differents."
+            )
+        if not params.envoi_client_actif:
+            raise HTTPException(403, "L'envoi direct au client est desactive (voir Parametres).")
+        devis_client = next((f.devis for f in factures if f.devis), None)
+        if not (devis_client and devis_client.client_email):
+            raise HTTPException(400, "Le client n'a pas d'adresse email enregistree.")
+
+    # Generation des PDF une seule fois (reutilises pour les deux emails eventuels).
+    factures_tri = sorted(factures, key=lambda x: (x.date_emission, x.id))
+    pjs: list[PieceJointe] = []
+    for f in factures_tri:
+        _, _, _, buf, filename = await _generer_facture_docx(f.id, db)
+        try:
+            pdf = await docx_vers_pdf(buf.getvalue())
+        except PdfError as e:
+            raise HTTPException(503, str(e))
+        pjs.append(PieceJointe(filename.rsplit(".", 1)[0] + ".pdf", pdf, "application/pdf"))
+
+    cfg = await smtp_config(db)
+    expediteur = cfg.sender
+    if not expediteur and societe and societe.email:
+        expediteur = f"{societe.marque or societe.nom} <{societe.email}>"
+    reply_to = societe.email if societe else None
+    envois: list[dict] = []
+
+    async def _envoyer(destinataire: str, mode: str, pour_client: bool):
+        sujet, html = construire_email_groupe(
+            factures_tri, devis_client if pour_client else None, societe, params,
+            pour_client=pour_client,
+        )
+        email = Email(destinataire=destinataire, sujet=sujet, html=html,
+                      pieces_jointes=pjs, reply_to=reply_to)
+        try:
+            await envoyer_email(db, email, expediteur)
+        except EmailError as e:
+            raise HTTPException(400, str(e))
+        for f in factures:
+            db.add(FactureEnvoi(facture_id=f.id, mode=mode, destinataire=destinataire))
+        envois.append({"mode": mode, "destinataire": destinataire})
+
+    if data.a_moi:
+        dest = await adresse_expediteur(db, societe)
+        if not dest:
+            raise HTTPException(400, "Adresse d'expedition introuvable (voir Parametres).")
+        await _envoyer(dest, "expediteur", False)
+    if data.au_client:
+        await _envoyer(devis_client.client_email, "client", True)
+
+    await db.commit()
+    return {"ok": True, "nb_factures": len(factures), "envois": envois}
 
 
 @router.get("/{facture_id}", response_model=FactureSummary)

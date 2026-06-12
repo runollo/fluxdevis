@@ -1034,6 +1034,31 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
   recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
   ASK-VSE offert recurrent = 0).
 
+### Envoi GROUPE de plusieurs factures en PJ (factures.py + email_modeles.py + frontend)
+Besoin : envoyer plusieurs factures en pieces jointes (PDF) dans un seul email (ex : le
+comptable les reclame).
+- Backend : `POST /api/factures/envoyer-lot` (declare AVANT `/{facture_id}`), body
+  `{facture_ids, au_client, a_moi}`. Garde-fous : email configure ; au moins un
+  destinataire ; factures non archivees et NON brouillon (emises uniquement) ; si
+  `au_client` -> toutes du MEME client + `client_email` present + `envoi_client_actif`.
+  Genere les PDF une fois (`_generer_facture_docx` + `docx_vers_pdf`), un seul `Email` avec
+  la LISTE de `PieceJointe`. "Les deux" = 2 emails (client + expediteur). Trace un
+  `FactureEnvoi` par facture et par envoi. Builder `construire_email_groupe`
+  (email_modeles.py, texte par defaut, pas encore editable dans Parametres).
+  `FactureListItem.client_id` ajoute (pour le regroupement cote front).
+- Frontend : Client Component `src/app/factures/EnvoiGroupe.tsx` (bouton "Envoyer
+  plusieurs factures" en haut de /factures -> MODALE de selection a cases a cocher).
+  Logique destinataire : mono-client -> a moi / au client / les deux (les 2 derniers
+  desactives si `envoi_client_actif` off) ; clients differents -> a moi uniquement. Appel
+  `fetch('/api/factures/envoyer-lot')` puis `router.refresh()`.
+  NB CHOIX D'IMPLEMENTATION : modale dediee (selection DANS la popup) plutot que des cases
+  a cocher inline dans le tableau existant -> evite de refactorer une page de prod chargee
+  (filtres, pagination, actions par ligne), pour un resultat fonctionnel identique. La
+  selection porte sur les factures de la PAGE COURANTE (filtrer par client au besoin).
+- Verifie : garde-fous (lot vide 400, sans destinataire 400, au_client off 403 -> zero
+  envoi), client_id expose, tsc OK, page rendue avec le bouton. ENVOI REEL non declenche
+  (a tester par Bruno via l'UI : selectionner -> A moi -> Envoyer).
+
 ### Dashboard : versions actives + montants HT (dashboard.py + frontend page.tsx)
 - Le dashboard ne comptait pas `version_active` -> une version de devis remplacee
   (version_active=False, non archivee) apparaissait dans "Derniers devis" alors qu'elle

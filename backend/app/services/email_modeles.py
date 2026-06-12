@@ -28,6 +28,15 @@ DEFAUT_CORPS_FACTURE = (
     "Nous vous remercions de votre confiance."
 )
 DEFAUT_SIGNATURE = "Cordialement,\n{marque}"
+DEFAUT_OBJET_GROUPE = "Factures - {marque}"
+DEFAUT_CORPS_GROUPE_CLIENT = (
+    "Bonjour {interlocuteur},\n\n"
+    "Veuillez trouver ci-joint les factures suivantes :\n{liste_factures}\n\n"
+    "Nous restons a votre disposition pour toute question."
+)
+DEFAUT_CORPS_GROUPE_MOI = (
+    "Factures jointes (a transferer) :\n{liste_factures}"
+)
 DEFAUT_OBJET_RELANCE = "Rappel - facture {numero} en attente de reglement - {marque}"
 DEFAUT_CORPS_RELANCE = (
     "Bonjour {interlocuteur},\n\n"
@@ -115,6 +124,29 @@ def construire_email_relance(facture, devis, societe, params, jours_retard=0) ->
         (params and params.email_signature) or DEFAUT_SIGNATURE,
         variables,
     )
+    return objet, html
+
+
+def construire_email_groupe(factures, devis, societe, params, *, pour_client: bool) -> tuple[str, str]:
+    """Retourne (objet, html) d'un email groupant plusieurs factures en PJ.
+
+    `devis` : un devis representatif (pour l'interlocuteur/client) si toutes les
+    factures sont du meme client ; None pour un envoi a soi-meme multi-clients.
+    `pour_client` : destine au client (interlocuteur, signature) ou a soi-meme
+    (sujet prefixe "[A transferer]")."""
+    marque = (societe.marque or societe.nom) if societe else "FluXweb"
+    interlocuteur = devis.client_interlocuteur if devis else None
+    client = devis.client_raison_sociale if devis else ""
+    liste = "\n".join(f"- {f.numero}" for f in factures)
+    variables = _variables_communes(client, interlocuteur, "", marque)
+    variables["liste_factures"] = liste
+    signature = (params and params.email_signature) or DEFAUT_SIGNATURE
+    if pour_client:
+        objet = _appliquer(DEFAUT_OBJET_GROUPE, variables)
+        html = _assembler(DEFAUT_CORPS_GROUPE_CLIENT, signature, variables)
+    else:
+        objet = "[A transferer] " + _appliquer(DEFAUT_OBJET_GROUPE, variables)
+        html = _assembler(DEFAUT_CORPS_GROUPE_MOI, signature, variables)
     return objet, html
 
 

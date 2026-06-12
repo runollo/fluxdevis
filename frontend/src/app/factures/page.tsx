@@ -1,6 +1,7 @@
 import { serverFetch } from "@/lib/api";
 import { restaurerFacture, envoyerFacture, marquerPayee, marquerImpayee, relancerFacture } from "@/lib/actions";
 import Link from "next/link";
+import EnvoiGroupe from "./EnvoiGroupe";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ function eur(v: number | string) {
 interface Facture {
   id: number; numero: string; type: string; statut: string;
   date_emission: string; date_echeance: string; objet: string; total_ttc: string;
-  devis_id?: number | null; client?: string | null;
+  devis_id?: number | null; client_id?: number | null; client?: string | null;
   projet_ref?: string | null; projet_nom?: string | null;
   nb_envois?: number; dernier_envoi?: string | null; dernier_envoi_mode?: string | null;
   a_relancer?: boolean; jours_retard?: number | null;
@@ -147,7 +148,7 @@ export default async function FacturesPage(
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
           {corbeille ? "Corbeille — factures" : aRelancer ? "Factures a relancer" : "Factures"} ({factures.length})
         </h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {corbeille ? (
             <Link href="/factures" className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
               Retour aux factures
@@ -163,6 +164,7 @@ export default async function FacturesPage(
                   A relancer
                 </Link>
               )}
+              <EnvoiGroupe factures={factures} envoiClientActif={envoiClientActif} />
               <a href={`/api/factures/export.xlsx${q ? `?q=${encodeURIComponent(q)}` : ""}`} className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded text-sm font-medium text-center">
                 Export Excel
               </a>

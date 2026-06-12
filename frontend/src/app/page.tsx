@@ -9,17 +9,17 @@ function eur(v: number | string) {
 
 interface DevisRecent {
   id: number; reference: string; client_raison_sociale: string;
-  statut: string; total_ttc: string; date_emission: string;
+  statut: string; total_ht: string; date_emission: string;
 }
 interface FactureRecente {
   id: number; numero: string; objet: string;
-  statut: string; total_ttc: string; date_emission: string;
+  statut: string; total_ht: string; date_emission: string;
 }
 interface Stats {
   offres_actives: number; options_actives: number; clients: number;
   devis_total: number; devis_acceptes: number;
   factures_total: number; factures_impayees: number; factures_a_relancer: number;
-  montant_devis_ttc: string; montant_factures_ttc: string;
+  montant_devis_ht: string; montant_factures_ht: string;
   derniers_devis: DevisRecent[]; dernieres_factures: FactureRecente[];
 }
 
@@ -44,7 +44,7 @@ export default async function Dashboard() {
     { label: "Clients", value: s?.clients ?? "-", href: "/clients", bg: "bg-orange-50", border: "border-orange-300", text: "text-orange-900" },
     { label: "Devis", value: s?.devis_total ?? "-", href: "/devis", bg: "bg-indigo-50", border: "border-indigo-300", text: "text-indigo-900" },
     { label: "Factures", value: s?.factures_total ?? "-", href: "/factures", bg: "bg-purple-50", border: "border-purple-300", text: "text-purple-900" },
-    { label: "Montant devis TTC", value: s ? eur(s.montant_devis_ttc) : "-", href: "/devis", bg: "bg-slate-50", border: "border-slate-300", text: "text-slate-900" },
+    { label: "Montant devis HT", value: s ? eur(s.montant_devis_ht) : "-", href: "/devis", bg: "bg-slate-50", border: "border-slate-300", text: "text-slate-900" },
   ];
 
   return (
@@ -98,7 +98,7 @@ export default async function Dashboard() {
                     <p className="text-xs text-gray-500 truncate">{d.client_raison_sociale}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-medium">{eur(d.total_ttc)}</p>
+                    <p className="text-sm font-medium">{eur(d.total_ht)} <span className="text-[10px] font-normal text-gray-400">HT</span></p>
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${STATUT_DEVIS[d.statut] || "bg-gray-100 text-gray-700"}`}>
                       {d.statut}
                     </span>
@@ -126,7 +126,7 @@ export default async function Dashboard() {
                     <p className="text-xs text-gray-500 truncate">{f.objet}</p>
                   </div>
                   <div className="text-right shrink-0">
-                    <p className="text-sm font-medium">{eur(f.total_ttc)}</p>
+                    <p className="text-sm font-medium">{eur(f.total_ht)} <span className="text-[10px] font-normal text-gray-400">HT</span></p>
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${STATUT_FACTURE[f.statut] || "bg-gray-100 text-gray-700"}`}>
                       {f.statut}
                     </span>

@@ -24,7 +24,7 @@ class DevisRecent(BaseModel):
     reference: str
     client_raison_sociale: str
     statut: str
-    total_ttc: Decimal
+    total_ht: Decimal
     date_emission: date
 
 
@@ -33,7 +33,7 @@ class FactureRecente(BaseModel):
     numero: str
     objet: str
     statut: str
-    total_ttc: Decimal
+    total_ht: Decimal
     date_emission: date
 
 
@@ -46,8 +46,8 @@ class DashboardStats(BaseModel):
     factures_total: int
     factures_impayees: int
     factures_a_relancer: int
-    montant_devis_ttc: Decimal
-    montant_factures_ttc: Decimal
+    montant_devis_ht: Decimal
+    montant_factures_ht: Decimal
     derniers_devis: list[DevisRecent]
     dernieres_factures: list[FactureRecente]
 
@@ -73,9 +73,12 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     options_actives = await _count(db, Option, Option.actif.is_(True))
     clients = await _count(db, Client, Client.actif.is_(True))
     # Les documents archives (corbeille) sont exclus de toutes les statistiques.
-    devis_total = await _count(db, Devis, Devis.archived_at.is_(None))
+    # On ne compte que les VERSIONS ACTIVES des devis (une version remplacee a
+    # version_active=False) — coherent avec la liste /devis.
+    devis_total = await _count(db, Devis, Devis.archived_at.is_(None), Devis.version_active.is_(True))
     devis_acceptes = await _count(
-        db, Devis, Devis.archived_at.is_(None), Devis.statut == StatutDevis.ACCEPTE
+        db, Devis, Devis.archived_at.is_(None), Devis.version_active.is_(True),
+        Devis.statut == StatutDevis.ACCEPTE
     )
     factures_total = await _count(db, Facture, Facture.archived_at.is_(None))
     factures_impayees = await _count(
@@ -84,11 +87,14 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
     )
     factures_a_relancer = len(await relances_svc.factures_a_relancer(db))
 
-    montant_devis = await _somme(db, Devis.total_ttc, Devis.archived_at.is_(None))
-    montant_factures = await _somme(db, Facture.total_ttc, Facture.archived_at.is_(None))
+    montant_devis = await _somme(
+        db, Devis.total_ht, Devis.archived_at.is_(None), Devis.version_active.is_(True)
+    )
+    montant_factures = await _somme(db, Facture.total_ht, Facture.archived_at.is_(None))
 
     derniers_devis = (await db.execute(
-        select(Devis).where(Devis.archived_at.is_(None))
+        select(Devis)
+        .where(Devis.archived_at.is_(None), Devis.version_active.is_(True))
         .order_by(Devis.date_emission.desc(), Devis.id.desc()).limit(5)
     )).scalars().all()
 
@@ -106,20 +112,20 @@ async def get_dashboard(db: AsyncSession = Depends(get_db)):
         factures_total=factures_total,
         factures_impayees=factures_impayees,
         factures_a_relancer=factures_a_relancer,
-        montant_devis_ttc=montant_devis,
-        montant_factures_ttc=montant_factures,
+        montant_devis_ht=montant_devis,
+        montant_factures_ht=montant_factures,
         derniers_devis=[
             DevisRecent(
                 id=d.id, reference=d.reference,
                 client_raison_sociale=d.client_raison_sociale,
-                statut=d.statut.value, total_ttc=d.total_ttc,
+                statut=d.statut.value, total_ht=d.total_ht,
                 date_emission=d.date_emission,
             ) for d in derniers_devis
         ],
         dernieres_factures=[
             FactureRecente(
                 id=f.id, numero=f.numero, objet=f.objet,
-                statut=f.statut.value, total_ttc=f.total_ttc,
+                statut=f.statut.value, total_ht=f.total_ht,
                 date_emission=f.date_emission,
             ) for f in dernieres_factures
         ],

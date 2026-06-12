@@ -1034,6 +1034,16 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
   recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
   ASK-VSE offert recurrent = 0).
 
+### Dashboard : versions actives + montants HT (dashboard.py + frontend page.tsx)
+- Le dashboard ne comptait pas `version_active` -> une version de devis remplacee
+  (version_active=False, non archivee) apparaissait dans "Derniers devis" alors qu'elle
+  est masquee sur /devis. Ajout du filtre `Devis.version_active.is_(True)` sur la liste +
+  `devis_total` + `devis_acceptes` + `montant_devis`.
+- Montants du dashboard passes en HT (plus parlant que le TTC) : cles API renommees
+  `montant_devis_ht` / `montant_factures_ht` (base `total_ht`), `DevisRecent`/
+  `FactureRecente.total_ht`. Frontend : libelle "Montant devis HT" + suffixe "HT" sur les
+  lignes Derniers devis/factures. tsc OK.
+
 ### Operation donnees ASK-VSE (devis 16)
 Rien n'avait ete envoye au client ni saisi dans Indy -> remise au propre autorisee.
 Backup `backend/backups/backup_askvse_remise_propre.json` (hors git). Purge des factures du

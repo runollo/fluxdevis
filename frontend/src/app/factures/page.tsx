@@ -2,6 +2,8 @@ import { serverFetch } from "@/lib/api";
 import { restaurerFacture, envoyerFacture, marquerPayee, marquerImpayee, relancerFacture } from "@/lib/actions";
 import Link from "next/link";
 import EnvoiGroupe from "./EnvoiGroupe";
+import SubmitButton from "@/components/SubmitButton";
+import Flash from "@/components/Flash";
 
 export const dynamic = "force-dynamic";
 
@@ -179,27 +181,10 @@ export default async function FacturesPage(
         </div>
       </div>
 
-      {params.suppr_msg && (
-        <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
-          {params.suppr_msg}
-        </div>
-      )}
-
-      {params.envoye === "1" && (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
-          Facture envoyee par email au client.
-        </div>
-      )}
-      {params.envoye === "moi" && (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
-          Facture envoyee sur votre adresse (a transferer).
-        </div>
-      )}
-      {params.envoye === "relance" && (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 text-green-700 px-4 py-3 text-sm">
-          Relance envoyee au client.
-        </div>
-      )}
+      {params.suppr_msg && <Flash type="error" param="suppr_msg" message={params.suppr_msg} />}
+      {params.envoye === "1" && <Flash param="envoye" message="Facture envoyee par email au client." />}
+      {params.envoye === "moi" && <Flash param="envoye" message="Facture envoyee sur votre adresse (a transferer)." />}
+      {params.envoye === "relance" && <Flash param="envoye" message="Relance envoyee au client." />}
 
       {/* Recherche + filtres (masques en corbeille) */}
       {corbeille ? (
@@ -331,13 +316,13 @@ export default async function FacturesPage(
                         )}
                         <div className="mt-1 flex gap-2">
                           {envoiClientActif && (
-                            <button type="submit" name="mode" value="client" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
+                            <SubmitButton name="mode" value="client" pendingLabel="Envoi…" className="flex-1 text-center px-3 py-2 bg-green-700 text-white rounded text-sm font-medium">
                               Au client{f.client ? ` (${f.client})` : ""}
-                            </button>
+                            </SubmitButton>
                           )}
-                          <button type="submit" name="mode" value="expediteur" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
+                          <SubmitButton name="mode" value="expediteur" pendingLabel="Envoi…" className="flex-1 text-center px-3 py-2 border border-gray-300 text-gray-600 rounded text-sm font-medium">
                             A moi
-                          </button>
+                          </SubmitButton>
                         </div>
                       </details>
                     </form>
@@ -491,9 +476,9 @@ export default async function FacturesPage(
                                 )}
                                 <span className="inline-flex gap-2">
                                   {envoiClientActif && (
-                                    <button type="submit" name="mode" value="client" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</button>
+                                    <SubmitButton name="mode" value="client" pendingLabel="Envoi…" className="bg-green-700 text-white px-2 py-0.5 rounded text-xs">au client</SubmitButton>
                                   )}
-                                  <button type="submit" name="mode" value="expediteur" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</button>
+                                  <SubmitButton name="mode" value="expediteur" pendingLabel="Envoi…" className="border border-gray-300 text-gray-600 px-2 py-0.5 rounded text-xs">a moi</SubmitButton>
                                 </span>
                               </div>
                             </details>

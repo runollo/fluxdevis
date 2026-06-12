@@ -1,6 +1,7 @@
 import { serverFetch } from "@/lib/api";
 import { genererFactures, restaurerDevis } from "@/lib/actions";
 import Link from "next/link";
+import Flash from "@/components/Flash";
 
 export const dynamic = "force-dynamic";
 
@@ -79,11 +80,7 @@ export default async function DevisPage(
         </div>
       </div>
 
-      {params.suppr_msg && (
-        <div className="mb-4 rounded border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">
-          {params.suppr_msg}
-        </div>
-      )}
+      {params.suppr_msg && <Flash type="error" param="suppr_msg" message={params.suppr_msg} />}
 
       {/* Recherche */}
       <form method="GET" className="mb-4 flex gap-2">

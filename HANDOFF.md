@@ -1034,6 +1034,25 @@ Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L
   recurrents coexistent avec la remise, le brut affiche = brut hors offert (cas rare ;
   ASK-VSE offert recurrent = 0).
 
+### Audit UI/UX + Lot A "quick wins" (frontend)
+Audit complet realise (3 axes : navigation/listes, formulaires/flux, design system/a11y).
+Constat : app fonctionnelle mais design system immature (couleur #1A355E en dur ~80x,
+badges/tableaux/formulaires dupliques, pas de composants partages, a11y faible). Lots B
+(fondations design system : tailwind.config + composants Button/Badge/Card/Modal/FormField)
+et C (validation formulaires, confirmations, loading/error pages) RESTENT a faire.
+Lot A livre :
+- `globals.css` : focus clavier visible global (:focus-visible) + utilitaire `safe-bottom`.
+- `src/components/SubmitButton.tsx` (useFormStatus) : desactive le bouton + libelle
+  d'attente pendant la Server Action (anti double-soumission). Applique a : enregistrer
+  devis (simulateur), enregistrer client, et les boutons d'ENVOI email de /factures
+  (anti double-email). RESTE a etendre : devis/detail (generer/envoyer), paiements,
+  relances, parametres.
+- `src/components/Flash.tsx` : message de feedback ephemere (auto-disparait ~5 s, bouton
+  fermer, RETIRE le param de l'URL pour ne pas reapparaitre au refresh). Remplace les
+  bandeaux statiques de /factures (envoye/suppr_msg) et /devis (suppr_msg). RESTE :
+  devis/detail (params erreur/maj plus riches) garde ses bandeaux.
+- Responsive : barre de boutons /devis en flex-wrap. Contraste : objet facture gray-600.
+
 ### Envoi GROUPE de plusieurs factures en PJ (factures.py + email_modeles.py + frontend)
 Besoin : envoyer plusieurs factures en pieces jointes (PDF) dans un seul email (ex : le
 comptable les reclame).

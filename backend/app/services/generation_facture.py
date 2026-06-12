@@ -34,9 +34,6 @@ class FactureData:
         self.type_facture: str = kwargs.get("type_facture", "acompte")
         self.date_emission: date = kwargs.get("date_emission", date.today())
         self.date_echeance: date = kwargs.get("date_echeance", date.today())
-        # Date de versement de l'acompte / du solde (mention obligatoire : date de
-        # la prestation ou date de versement de l'acompte). None pour la maintenance.
-        self.date_acompte: date | None = kwargs.get("date_acompte")
         self.objet: str = kwargs.get("objet", "")
 
         # Emetteur
@@ -153,10 +150,10 @@ def _add_emetteur_meta(doc, data):
         if data.facture_origine_num:
             meta.append(("R\u00e9f. facture annul\u00e9e", data.facture_origine_num))
     else:
-        # Mention obligatoire : date de la prestation ou date de versement de l'acompte.
-        if data.date_acompte and data.type_facture in ("acompte", "solde"):
-            label_versement = "Date du solde" if data.type_facture == "solde" else "Date de l\u2019acompte"
-            meta.append((label_versement, data.date_acompte.strftime("%d/%m/%Y")))
+        # La date de versement de l'acompte n'est PAS portee en mention separee :
+        # elle serait inexacte sur une demande d'acompte non encore reglee, et le
+        # recapitulatif d'echeancier (ci-dessous) montre deja la date et le statut
+        # de chaque versement. On conserve uniquement la date d'echeance.
         meta.append(("Date d\u2019\u00e9ch\u00e9ance", data.date_echeance.strftime("%d/%m/%Y")))
     if data.periode:
         meta.append(("P\u00e9riode", data.periode))
@@ -246,7 +243,9 @@ def _add_echeancier(doc, data):
 
     for row_idx, ech in enumerate(data.echeances, start=1):
         is_current = row_idx - 1 == data.idx_echeance
-        is_paid = row_idx - 1 < data.idx_echeance
+        # Barrage base sur le paiement REEL du versement (flag "paye" par ligne),
+        # plus sur une presomption de position.
+        is_paid = ech.get("paye", False)
         row = tbl.rows[row_idx]
         if is_current:
             for c in row.cells:

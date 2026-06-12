@@ -1,7 +1,64 @@
 # HANDOFF — Projet FluxDevis
 
 Document de passation pour reprise par un autre agent.
-Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-11
+Date de creation : 2026-05-29 — Derniere mise a jour : 2026-06-12
+
+---
+
+## POINT DE REPRISE (2026-06-12)
+
+Session 2026-06-12 — Affinage des FACTURES (echeancier, dates, objets) suite a la
+generation reelle des factures ASK-VSE par Bruno. Schema A (acompte/solde) CONFIRME comme
+schema conforme (cf. art. 289 CGI ci-dessous) ; schema B ecarte. Detail complet : section
+"Session 2026-06-12 (detail)". En bref :
+
+1. CADRAGE JURIDIQUE (verifie sur BOFiP/service-public) : les ventes FluXweb encaissent un
+   acompte AVANT la livraison -> juridiquement des ACOMPTES -> facture d'acompte
+   OBLIGATOIRE par versement (art. 289 CGI ; TVA exigible a l'encaissement pour les
+   prestations de services). Donc on GARDE le schema A (N factures Acompte 1, Acompte 2 ...
+   Solde). Le "schema B" (UNE facture unique + echeancier de reglement) n'est legal que
+   pour une prestation DEJA LIVREE payee ensuite -> NON implemente (a ajouter le jour ou ce
+   cas se presente). Le client envoie donc bien N factures (une par tranche), pas une seule.
+
+2. BARRAGE de l'echeancier (recap sur le document Word) : une ligne n'est barree que si son
+   versement est STRICTEMENT ANTERIEUR a la facture courante ET reellement encaisse (facture
+   soeur en statut PAYEE). Avant : presomption figee `e_idx < idx` -> barrait des versements
+   non payes / le versement reclame par la facture elle-meme. Une facture d'acompte est une
+   DEMANDE de paiement : son propre versement n'est jamais barre (juste mis en surbrillance).
+
+3. MENTION "Date de l'acompte / du solde" RETIREE du document (etait fausse = jour du clic
+   "Payee", et redondante avec le recap d'echeancier). `date_paiement` reste un suivi
+   interne (relances/compta), n'apparait plus sur le document.
+
+4. DATES des factures d'un paiement echelonne : TOUTES emises a la DATE DE SIGNATURE (base
+   echeancier) ; seule l'ECHEANCE suit l'echeancier reparti sur 60 j (delai legal B2B : 30 j
+   par defaut, 60 j max). Donc seul le 1er acompte a emission = echeance (normal : payable a
+   la commande). Le numero F-XXXX-AAMMJJ-NNN utilise la date d'emission -> les factures setup
+   d'un meme devis partagent la meme date AAMMJJ.
+
+5. OBJET des factures (plus de nom commercial d'offre ni nombre de pages, qui devient faux
+   avec les pages ajoutees en option) :
+   - Creation (acompte/solde) : "Creation d'un site internet" (Webflow) / "Creation d'une
+     boutique en ligne" (Shopify) -> proprietes `Devis.libelle_creation` / `libelle_support`.
+   - Maintenance : composantes recurrentes reellement souscrites (pack + options a mensuel
+     > 0), noms catalogue joints par " + ", + periode. Ex ASK-VSE : "Hebergement inclus +
+     Maintenance Standard (Webflow) + Acces edition contenu client (Webflow) — periode du
+     26/05/2026 au 25/06/2026".
+
+6. ASK-VSE (devis 16) REGENERE PROPREMENT (rien n'avait ete envoye ni saisi dans Indy) :
+   backup `backend/backups/backup_askvse_remise_propre.json`, purge + reset compteur 2026,
+   regeneration, emission dans l'ordre chronologique :
+   - F-ASKV-260415-001 Acompte 1/3 (emis 15/04, ech 15/04) PAYEE
+   - F-ASKV-260415-002 Acompte 2/3 (emis 15/04, ech 15/05) PAYEE
+   - F-ASKV-260415-003 Solde       (emis 15/04, ech 14/06) EMISE
+   - F-ASKV-260526-004 Maintenance (emis 26/05) EMISE
+   RESTE cote Bruno : confirmer les VRAIES dates de versement des 2 acomptes (mises a 15/04
+   et 15/05 par defaut ; n'apparaissent PAS sur le document, suivi interne) ; verifier les
+   PDF puis envoyer.
+
+/!\ SUJET DE FOND non resolu : FluxDevis ne FIGE pas le document emis (regenere a la volee
+depuis la base) -> une facture deja envoyee peut changer si les donnees bougent. Chantier
+separe (snapshot / archivage du PDF a l'emission).
 
 ---
 
@@ -910,6 +967,63 @@ A reutiliser pour : repondre aux questions client, et eventuellement une page UI
 ### Phase E — Auth multi-utilisateur (differee)
 - Bruno est le seul utilisateur pour l'instant
 - A implementer si besoin plus tard (admin, commercial, apporteur)
+
+---
+
+## Session 2026-06-12 (detail)
+
+Affinage des factures suite a la generation reelle des factures ASK-VSE. Aucun nouveau
+modele/migration : uniquement de la logique de generation + un objet metier. 5 fichiers
+backend modifies, 0 schema change.
+
+### Cadrage juridique (decisif)
+Verifie sur sources officielles (BOFiP impots.gouv, service-public, Legifrance L441) :
+- Tout acompte encaisse AVANT le fait generateur (livraison/mise en ligne) -> facture
+  d'acompte OBLIGATOIRE (art. 289 CGI). TVA exigible a l'encaissement pour les prestations
+  de services (art. 269 CGI). -> schema A (acompte/solde) = le schema conforme pour les
+  ventes avec acompte a la commande.
+- Schema B (facture unique + echeancier de reglement) : legal UNIQUEMENT pour une prestation
+  deja livree payee ensuite en plusieurs fois. NON implemente (Bruno ne facture pas ainsi
+  aujourd'hui). A ajouter le jour ou le cas se presente.
+- Delai de paiement B2B : 30 j par DEFAUT (suppletif), 60 j MAX convenable (L441-10).
+
+### Barrage de l'echeancier base sur le paiement reel (factures.py + generation_facture.py)
+- `_generer_facture_docx` (factures.py) : charge les factures SOEURS du devis (type
+  ACOMPTE/SOLDE, non archivees, triees par date_echeance puis id), correspondant 1:1 aux
+  lignes de l'echeancier. `idx_echeance` = rang de la facture courante. Flag `paye` par
+  ligne = `(i < idx_echeance) and (soeur.statut == PAYEE)` -> strictement anterieur (la
+  facture ne barre jamais le versement qu'elle reclame) ET reellement encaisse. Fallback sur
+  l'ancien `e.payee` embarque si le nb de soeurs != nb d'echeances (cas degrade).
+- `_add_echeancier` (generation_facture.py) : `is_paid = ech.get("paye", False)` (barrage
+  par ligne) au lieu du prefixe `row_idx-1 < idx_echeance`. `is_current` (surbrillance)
+  conserve.
+
+### Mention "Date de l'acompte" retiree (generation_facture.py + factures.py)
+- `_add_emetteur_meta` : suppression du bloc "Date de l'acompte / Date du solde" (base sur
+  `date_paiement`). On garde "Date d'echeance". Champ `FactureData.date_acompte` supprime
+  (code mort). `_generer_facture_docx` ne calcule/passe plus `date_acompte`.
+
+### Dates : emission a la signature, echeance = tranche (devis.py)
+- `_creer_factures_acompte` et `_recompute_dates_factures` : `date_emission = base`
+  (`_base_echeancier` = date_signature) pour TOUTES les factures du plan ; `date_echeance =
+  dates[idx]` (echeancier reparti sur 60 j via `dates_echeancier_legal`).
+
+### Objet des factures (models/devis.py + devis.py + facturation_maintenance.py)
+- `Devis.libelle_support` -> "site internet" / "boutique en ligne" (selon est_shopify).
+- `Devis.libelle_creation` -> "Creation d'un site internet" / "Creation d'une boutique en
+  ligne". Utilise dans l'objet des factures acompte/solde (a la place de `offre_nom`).
+- `generer_facture_maintenance` : objet = composantes recurrentes du devis (DevisOptionLigne
+  avec `prix_mensuel_ht > 0` = pack + options recurrentes payantes), noms catalogue joints
+  par " + ", + periode. Fallback "Maintenance du site internet / de la boutique en ligne".
+
+### Operation donnees ASK-VSE (devis 16)
+Rien n'avait ete envoye au client ni saisi dans Indy -> remise au propre autorisee.
+Backup `backend/backups/backup_askvse_remise_propre.json` (hors git). Purge des factures du
+devis 16 + reset `compteur_facture[2026]=0`, puis regeneration via les endpoints
+(`POST /devis/16/factures` + `/factures-maintenance`), emission dans l'ordre chronologique,
+acomptes 1 & 2 marques payes. Resultat : F-ASKV-260415-001/002/003 (setup, date emission
+15/04 commune) + F-ASKV-260526-004 (maintenance). Dates de versement des acomptes mises a
+15/04 et 15/05 PAR DEFAUT (a confirmer par Bruno ; suivi interne, hors document).
 
 ---
 

@@ -918,7 +918,10 @@ async def _recompute_dates_factures(db: AsyncSession, devis: Devis, factures: li
         if f.statut != StatutFacture.BROUILLON:
             continue
         if idx < len(dates):
-            f.date_emission = dates[idx]
+            # Toutes les factures d'un paiement echelonne sont emises a la
+            # signature ; seule l'echeance (date limite de paiement de la tranche)
+            # suit l'echeancier reparti sur 60 j.
+            f.date_emission = base
             f.date_echeance = dates[idx]
         for e in f.echeances:
             if 1 <= e.numero <= len(dates):
@@ -1200,7 +1203,9 @@ async def _creer_factures_acompte(db: AsyncSession, devis: Devis) -> list[Factur
         type_label = "Solde" if type_f == TypeFacture.SOLDE else f"Acompte {idx + 1}/{nb}"
 
         numero = generer_reference_facture(devis.client_raison_sociale, num_facture=idx + 1)
-        objet = f"{type_label} sur devis {devis.reference} — {devis.offre_nom}"
+        objet = f"{type_label} sur devis {devis.reference} — {devis.libelle_creation}"
+        # Toutes les factures du plan sont emises a la signature (base echeancier) ;
+        # l'echeance porte la date de la tranche correspondante.
 
         # Collections passees au constructeur pour eviter un lazy-load (contexte async)
         ligne = FactureLigne(
@@ -1224,7 +1229,7 @@ async def _creer_factures_acompte(db: AsyncSession, devis: Devis) -> list[Factur
             type=type_f,
             statut=StatutFacture.BROUILLON,
             devis_id=devis.id,
-            date_emission=dates[idx],
+            date_emission=base,
             date_echeance=dates[idx],
             objet=objet,
             total_ht=ht,

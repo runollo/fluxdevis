@@ -187,6 +187,20 @@ class Devis(Base, TimestampMixin, SoftDeleteMixin):
         """
         return "shopify" in (self.offre_type_site or "").lower()
 
+    @property
+    def libelle_support(self) -> str:
+        """Designation du support cree, sans detail (nb de pages, nom d'offre) :
+        'boutique en ligne' pour Shopify, 'site internet' sinon (Webflow)."""
+        return "boutique en ligne" if self.est_shopify else "site internet"
+
+    @property
+    def libelle_creation(self) -> str:
+        """Objet metier d'une facture de creation (acompte/solde) : decrit la
+        nature de la prestation sans le nom commercial de l'offre ni le nombre de
+        pages (qui devient faux des qu'on ajoute des pages en option)."""
+        return f"Création d'une {self.libelle_support}" if self.est_shopify \
+            else f"Création d'un {self.libelle_support}"
+
 
 class DevisLigne(Base):
     """Ligne de prestation sur mesure dans un devis (3 max dans l'Excel actuel)."""

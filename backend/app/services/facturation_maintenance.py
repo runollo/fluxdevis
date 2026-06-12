@@ -21,7 +21,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.devis import Devis, ModeReglement
+from app.models.devis import Devis, DevisOptionLigne, ModeReglement
 from app.models.facture import Facture, FactureLigne, TypeFacture, StatutFacture
 from app.services.reference import generer_reference_facture
 
@@ -147,14 +147,23 @@ async def generer_facture_maintenance(
     # Suffixe de numero provisoire base sur le total (archivees incluses) -> unicite
     total_factures = await _nb_factures(db, devis.id, actives_seulement=False)
     numero = generer_reference_facture(devis.client_raison_sociale, num_facture=total_factures + 1)
-    # Wording aligne sur le recap du devis : pour Shopify l'hebergement est porte
-    # par la plateforme (abonnement a la charge du client), donc "exploitation"
-    # plutot que "hebergement" — aucune ligne ne sous-entend un hebergement FluXweb.
-    nature = "exploitation" if devis.est_shopify else "hébergement"
-    objet = (
-        f"Maintenance & {nature} — {devis.offre_nom} — période du "
-        f"{debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
-    )
+    # Objet = type de maintenance reellement souscrit : pack de maintenance +
+    # options recurrentes payantes (mensuel > 0), avec leurs noms catalogue, dans
+    # l'ordre du devis. On n'affiche plus le nom commercial de l'offre (ni le nb de
+    # pages). Fallback generique si aucune composante recurrente n'est tracee.
+    comps = (await db.execute(
+        select(DevisOptionLigne.nom)
+        .where(
+            DevisOptionLigne.devis_id == devis.id,
+            DevisOptionLigne.prix_mensuel_ht > 0,
+        )
+        .order_by(DevisOptionLigne.ordre)
+    )).scalars().all()
+    detail = " + ".join(c for c in comps if c)
+    if not detail:
+        article = "de la" if devis.est_shopify else "du"
+        detail = f"Maintenance {article} {devis.libelle_support}"
+    objet = f"{detail} — période du {debut:%d/%m/%Y} au {fin:%d/%m/%Y}"
 
     ligne = FactureLigne(
         ordre=0, designation=objet, quantite=1,

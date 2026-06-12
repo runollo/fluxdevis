@@ -232,11 +232,46 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
         facture_origine_num = origine.numero if origine else ""
 
     echeances = sorted(facture.echeances, key=lambda e: e.numero)
+
+    # Barrage de l'echeancier base sur le paiement REEL. Dans le schema A, chaque
+    # ligne de l'echeancier correspond 1:1 a une facture soeur (meme devis, type
+    # acompte/solde, non archivee), creees ensemble par _creer_factures_acompte.
+    # Une ligne n'est barree que si sa facture soeur de meme rang est reellement
+    # en statut PAYEE (et non plus par presomption de position).
+    soeurs_res = await db.execute(
+        select(Facture)
+        .where(
+            Facture.devis_id == facture.devis_id,
+            Facture.type.in_((TypeFacture.ACOMPTE, TypeFacture.SOLDE)),
+            Facture.archived_at.is_(None),
+        )
+        .order_by(Facture.date_echeance, Facture.id)
+    )
+    soeurs = soeurs_res.scalars().all()
+
+    if len(soeurs) == len(echeances) and echeances:
+        # idx_echeance = rang de la facture courante parmi les soeurs (surbrillance).
+        idx_echeance = next((i for i, s in enumerate(soeurs) if s.id == facture.id), 0)
+        # Une ligne n'est barree que si (a) son versement est STRICTEMENT anterieur
+        # a la facture courante (la facture est une demande de paiement : son propre
+        # versement n'est pas encore regle au moment de l'emettre, et les versements
+        # posterieurs ne sont pas encore dus) ET (b) il est reellement encaisse
+        # (facture soeur PAYEE).
+        payes = [
+            (i < idx_echeance) and (s.statut == StatutFacture.PAYEE)
+            for i, s in enumerate(soeurs)
+        ]
+    else:
+        # Fallback (cas degrade : nombre de soeurs != nombre d'echeances) :
+        # on retombe sur le flag embarque historique.
+        payes = [e.payee for e in echeances]
+        idx_echeance = sum(1 for e in echeances if e.payee)
+
     ech_rows = [
-        {"label": e.label, "date": e.date_echeance.strftime("%d/%m/%Y"), "ttc": e.montant_ttc}
-        for e in echeances
+        {"label": e.label, "date": e.date_echeance.strftime("%d/%m/%Y"),
+         "ttc": e.montant_ttc, "paye": payes[i]}
+        for i, e in enumerate(echeances)
     ]
-    idx_echeance = sum(1 for e in echeances if e.payee)
 
     cp_ville = " ".join(x for x in [devis.client_cp, devis.client_ville] if x) if devis else ""
 
@@ -244,18 +279,11 @@ async def _generer_facture_docx(facture_id: int, db: AsyncSession):
     if facture.type == TypeFacture.MAINTENANCE and facture.periode_debut and facture.periode_fin:
         periode = f"{facture.periode_debut.strftime('%d/%m/%Y')} au {facture.periode_fin.strftime('%d/%m/%Y')}"
 
-    # Date de versement de l'acompte/solde (mention obligatoire) : date de
-    # paiement effective si reglee, sinon la date d'exigibilite du versement.
-    date_acompte = None
-    if facture.type in (TypeFacture.ACOMPTE, TypeFacture.SOLDE):
-        date_acompte = facture.date_paiement or facture.date_echeance
-
     data = FactureData(
         numero=facture.numero,
         type_facture=facture.type.value,
         date_emission=facture.date_emission,
         date_echeance=facture.date_echeance,
-        date_acompte=date_acompte,
         objet=facture.objet,
         emetteur_nom=societe.nom if societe else "BLUELINK INNOVATIONS",
         emetteur_forme=societe.forme_juridique if societe else "",
